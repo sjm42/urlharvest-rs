@@ -20,7 +20,7 @@ pub struct GlobalOptions {
     pub irc_log_dir: String,
     #[structopt(long, default_value = "$HOME/urllog/log")]
     pub log_dir: String,
-    #[structopt(long, default_value = "$HOME/urllog/data/urllog-test.db")]
+    #[structopt(long, default_value = "$HOME/urllog/data/urllog.db")]
     pub db_file: String,
     #[structopt(long, default_value = "urllog")]
     pub db_table: String,
