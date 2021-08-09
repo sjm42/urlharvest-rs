@@ -54,7 +54,7 @@ async fn check_table(c: &Connection) -> Result<(), Box<dyn Error>> {
     let table = &CFG.read().await.db_table;
     let mut st = c.prepare(
         "select count(name) from sqlite_master \
-                    where type='table' and name=?",
+        where type='table' and name=?",
     )?;
     let n: i32 = st.query([table])?.next()?.unwrap().get(0)?;
     if n == 1 {
