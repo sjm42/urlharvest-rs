@@ -144,19 +144,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("Scanning dir {}", &opt.irc_log_dir);
     for log_f in fs::read_dir(&opt.irc_log_dir)? {
         let log_f = log_f?;
-        lines.add_file(log_f.path()).await?;
         let log_fn = log_f.file_name().to_string_lossy().into_owned();
         if let Some(chan_match) = re_log.captures(&log_fn) {
             let p = log_f.path().file_name().unwrap().to_os_string();
             let irc_chan = chan_match.get(1).unwrap().as_str();
             chans.insert(p, irc_chan.to_string());
+            lines.add_file(log_f.path()).await?;
         }
     }
     debug!("My hash: {:?}", chans);
 
     while let Ok(Some(line)) = lines.next_line().await {
-        let chan = chans.get(line.source().file_name().unwrap()).unwrap();
         let msg = line.line();
+        let filename = line.source().file_name().unwrap();
+        let chan = match chans.get(filename) {
+            Some(c) => c,
+            None => {
+                error!("Unknown source filename: {:?}", filename);
+                error!("Offending msg: {}", msg);
+                continue;
+            }
+        };
+
         let nick = match re_nick.captures(msg) {
             Some(nick_match) => nick_match[1].to_owned(),
             None => "UNKNOWN".into(),
