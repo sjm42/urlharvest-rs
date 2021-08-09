@@ -1,14 +1,14 @@
 // main.rs
 #![feature(once_cell)]
 
+use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
+use rusqlite::{named_params, Connection};
 use std::{collections::HashMap, env, error::Error, ffi::*, fs, lazy::*};
 use structopt::StructOpt;
 use tokio::sync::RwLock;
-
-// TODO: URL matching, sqlite handling
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -20,7 +20,7 @@ pub struct GlobalOptions {
     pub irc_log_dir: String,
     #[structopt(long, default_value = "$HOME/urllog/log")]
     pub log_dir: String,
-    #[structopt(long, default_value = "$HOME/urllog/data/urllog.db")]
+    #[structopt(long, default_value = "$HOME/urllog/data/urllog-test.db")]
     pub db_file: String,
     #[structopt(long, default_value = "urllog")]
     pub db_table: String,
@@ -31,7 +31,7 @@ pub struct GlobalOptions {
     #[structopt(
         short,
         long,
-        default_value = r#"([a-z][a-z0-9\.\*\-]+)://([\w/',":;!%@=\-\.\~\?\#\[\]\$\&\(\)\*\+]+)"#
+        default_value = r#"(https?://[\w/',":;!%@=\-\.\~\?\#\[\]\$\&\(\)\*\+]+)"#
     )]
     pub re_url: String,
 }
@@ -45,10 +45,60 @@ static CFG: SyncLazy<RwLock<GlobalOptions>> = SyncLazy::new(|| {
         db_file: "".into(),
         db_table: "".into(),
         re_log: "".into(),
-        re_url: "".into(),
         re_nick: "".into(),
+        re_url: "".into(),
     })
 });
+
+async fn check_table(c: &Connection) -> Result<(), Box<dyn Error>> {
+    let table = &CFG.read().await.db_table;
+    let mut st = c.prepare(
+        "select count(name) from sqlite_master \
+                    where type='table' and name=?",
+    )?;
+    let n: i32 = st.query([table])?.next()?.unwrap().get(0)?;
+    if n == 1 {
+        info!("DB table exists.");
+    } else {
+        let sql = format!(
+            "begin;
+            create table {table} (
+            id integer primary key autoincrement,
+            timestamp integer,
+            channel text,
+            nick text,
+            url text);
+            create index {table}_timestamp on {table}(timestamp);
+            create index {table}_channel on {table}(channel);
+            create index {table}_nick on {table}(nick);
+            create unique index {table}_unique on {table}(channel, nick, url);
+            commit;",
+            table = table
+        );
+        info!("Creating new DB table+indexes.");
+        debug!("SQL:\n{}", &sql);
+        c.execute_batch(&sql)?;
+    }
+    Ok(())
+}
+
+async fn add_url(
+    c: &Connection,
+    ts: i64,
+    channel: &str,
+    nick: &str,
+    url: &str,
+) -> Result<(), Box<dyn Error>> {
+    let table = &CFG.read().await.db_table;
+    let sql = &format!(
+        "insert into {} (id, timestamp, channel, nick, url) \
+        values (null, :ts, :ch, :ni, :ur)",
+        table
+    );
+    let mut st = c.prepare_cached(sql)?;
+    st.execute(named_params! {":ts": ts, ":ch": channel, ":ni": nick, ":ur": url})?;
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -81,6 +131,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     debug!("Global config: {:?}", CFG.read().await);
 
+    let sqc = Connection::open(&opt.db_file)?;
+    check_table(&sqc).await?;
+
     let re_log = Regex::new(&opt.re_log)?;
     let re_nick = Regex::new(&opt.re_nick)?;
     let re_url = Regex::new(&opt.re_url)?;
@@ -104,16 +157,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     while let Ok(Some(line)) = lines.next_line().await {
         let chan = chans.get(line.source().file_name().unwrap()).unwrap();
         let msg = line.line();
-        debug!("{} -> {}", chan, msg);
+        let nick = match re_nick.captures(msg) {
+            Some(nick_match) => nick_match[1].to_owned(),
+            None => "UNKNOWN".into(),
+        };
+        debug!("{} {}", chan, msg);
 
-        match re_nick.captures(msg) {
-            None => debug!("Ignored: {}", msg),
-            Some(nick_match) => {
-                let nick = nick_match.get(1).unwrap().as_str();
-                debug!("Nick: {}", nick);
-            }
+        for cap in re_url.captures_iter(msg) {
+            let url = &cap[1];
+            info!("Detected url: {}", url);
+            // This may fail, because of the unique index
+            let _ = add_url(&sqc, Utc::now().timestamp(), chan, &nick, url).await;
         }
     }
+    sqc.close().unwrap();
     Ok(())
 }
 // EOF
