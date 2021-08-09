@@ -1,13 +1,14 @@
 // main.rs
 #![feature(once_cell)]
 
+use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
+use std::{collections::HashMap, env, error::Error, ffi::*, fs, lazy::*};
 use structopt::StructOpt;
-use std::{env, fs, io, error::Error, lazy::*};
 use tokio::sync::RwLock;
 
-// TODO: sqlite handling, IRC log tailing with linemux
+// TODO: URL matching, sqlite handling
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -24,25 +25,30 @@ pub struct GlobalOptions {
     #[structopt(long, default_value = "urllog")]
     pub db_table: String,
     #[structopt(long, default_value = r#"^(#\S*)\.log$"#)]
-    pub log_re: String,
-    #[structopt(short, long, default_value = r#"([a-z][a-z0-9\.\*\-]+)://([\w\-\.\,\~\:\;\/\?\#\[\]\@\!\$\&\'\(\)\*\+\%\=]+)"#)]
-    pub url_re: String,
-    #[structopt(long, default_value = r#"^[\:\d]+\s+[<\*][\~\&\@\%\+\s]*([^>\s]+)>?\s+"#)]
-    pub nick_re: String,
+    pub re_log: String,
+    #[structopt(long, default_value = r#"^[:\d]+\s+[<\*][%@\~\&\+\s]*([^>\s]+)>?\s+"#)]
+    pub re_nick: String,
+    #[structopt(
+        short,
+        long,
+        default_value = r#"([a-z][a-z0-9\.\*\-]+)://([\w/',":;!%@=\-\.\~\?\#\[\]\$\&\(\)\*\+]+)"#
+    )]
+    pub re_url: String,
 }
 
-static CFG: SyncLazy<RwLock<GlobalOptions>> =
-    SyncLazy::new(|| RwLock::new(GlobalOptions {
+static CFG: SyncLazy<RwLock<GlobalOptions>> = SyncLazy::new(|| {
+    RwLock::new(GlobalOptions {
         debug: false,
         trace: false,
         irc_log_dir: "".into(),
         log_dir: "".into(),
         db_file: "".into(),
         db_table: "".into(),
-        log_re: "".into(),
-        url_re: "".into(),
-        nick_re: "".into(),
-    }));
+        re_log: "".into(),
+        re_url: "".into(),
+        re_nick: "".into(),
+    })
+});
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -75,20 +81,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     debug!("Global config: {:?}", CFG.read().await);
 
-    let log_re = Regex::new(&opt.log_re)?;
+    let re_log = Regex::new(&opt.re_log)?;
+    let re_nick = Regex::new(&opt.re_nick)?;
+    let re_url = Regex::new(&opt.re_url)?;
+
+    let mut chans: HashMap<OsString, String> = HashMap::with_capacity(16);
+    let mut lines = MuxedLines::new()?;
+
     debug!("Scanning dir {}", &opt.irc_log_dir);
     for log_f in fs::read_dir(&opt.irc_log_dir)? {
         let log_f = log_f?;
-        let log_path = log_f.path().to_string_lossy().into_owned();
+        lines.add_file(log_f.path()).await?;
         let log_fn = log_f.file_name().to_string_lossy().into_owned();
+        if let Some(chan_match) = re_log.captures(&log_fn) {
+            let p = log_f.path().file_name().unwrap().to_os_string();
+            let irc_chan = chan_match.get(1).unwrap().as_str();
+            chans.insert(p, irc_chan.to_string());
+        }
+    }
+    debug!("My hash: {:?}", chans);
 
-        if let Some(chan_match) =  log_re.captures(&log_fn) {
-            let irc_chan = match chan_match.get(1) {
-                Some(chan) => chan.as_str(),
-                None => "<UNKNOWN>",
-            };
-            debug!("Found channel {} in {}", irc_chan, &log_path);
-         }
+    while let Ok(Some(line)) = lines.next_line().await {
+        let chan = chans.get(line.source().file_name().unwrap()).unwrap();
+        let msg = line.line();
+        debug!("{} -> {}", chan, msg);
+
+        match re_nick.captures(msg) {
+            None => debug!("Ignored: {}", msg),
+            Some(nick_match) => {
+                let nick = nick_match.get(1).unwrap().as_str();
+                debug!("Nick: {}", nick);
+            }
+        }
     }
     Ok(())
 }
