@@ -157,8 +157,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("Detected url: {} {} {}", chan, &nick, url);
             // This may fail because of the unique index and then we don't care.
             match add_url(&sqc, table, Utc::now().timestamp(), chan, &nick, url) {
-                Ok(_) => info!("Saved."),
-                Err(_) => error!("Save failed.")
+                Ok(_) => info!("URL saved."),
+                Err(_) => error!("URL save failed. Most probably duplicate.")
             }
         }
     }
