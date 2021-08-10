@@ -6,9 +6,8 @@ use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
 use rusqlite::{named_params, Connection};
-use std::{collections::HashMap, env, error::Error, ffi::*, fs, lazy::*};
+use std::{collections::HashMap, env, error::Error, ffi::*, fs};
 use structopt::StructOpt;
-use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -36,22 +35,7 @@ pub struct GlobalOptions {
     pub re_url: String,
 }
 
-static CFG: SyncLazy<RwLock<GlobalOptions>> = SyncLazy::new(|| {
-    RwLock::new(GlobalOptions {
-        debug: false,
-        trace: false,
-        irc_log_dir: "".into(),
-        log_dir: "".into(),
-        db_file: "".into(),
-        db_table: "".into(),
-        re_log: "".into(),
-        re_nick: "".into(),
-        re_url: "".into(),
-    })
-});
-
-async fn check_table(c: &Connection) -> Result<(), Box<dyn Error>> {
-    let table = &CFG.read().await.db_table;
+fn check_table(c: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
     let mut st = c.prepare(
         "select count(name) from sqlite_master \
         where type='table' and name=?",
@@ -82,14 +66,14 @@ async fn check_table(c: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn add_url(
+fn add_url(
     c: &Connection,
+    table: &str,
     ts: i64,
     channel: &str,
     nick: &str,
     url: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let table = &CFG.read().await.db_table;
     let sql = &format!(
         "insert into {} (id, timestamp, channel, nick, url) \
         values (null, :ts, :ch, :ni, :ur)",
@@ -124,15 +108,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("Git commit: {}", env!("GIT_COMMIT"));
     debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-
-    {
-        let mut o = CFG.write().await;
-        *o = opt.clone();
-    }
-    debug!("Global config: {:?}", CFG.read().await);
+    debug!("Global config: {:?}", opt);
 
     let sqc = Connection::open(&opt.db_file)?;
-    check_table(&sqc).await?;
+    let table = &opt.db_table;
+    check_table(&sqc, table)?;
 
     let re_log = Regex::new(&opt.re_log)?;
     let re_nick = Regex::new(&opt.re_nick)?;
@@ -166,17 +146,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         };
 
-        let nick = match re_nick.captures(msg) {
-            Some(nick_match) => nick_match[1].to_owned(),
-            None => "UNKNOWN".into(),
+        let cap = re_nick.captures(msg);
+        let nick;
+        match cap {
+            Some(nick_match) => { nick = nick_match[1].clone()},
+            None => { nick = "UNKNOWN"},
         };
         debug!("{} {}", chan, msg);
 
         for cap in re_url.captures_iter(msg) {
             let url = &cap[1];
             info!("Detected url: {}", url);
-            // This may fail, because of the unique index
-            let _ = add_url(&sqc, Utc::now().timestamp(), chan, &nick, url).await;
+            // This may fail because of the unique index and then we don't care.
+            let _ = add_url(&sqc, table, Utc::now().timestamp(), chan, nick, url);
         }
     }
     sqc.close().unwrap();
