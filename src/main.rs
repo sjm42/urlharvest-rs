@@ -146,11 +146,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         };
 
-        let cap = re_nick.captures(msg);
-        let nick;
-        match cap {
-            Some(nick_match) => { nick = nick_match[1].clone()},
-            None => { nick = "UNKNOWN"},
+        let nick = match re_nick.captures(msg) {
+            Some(nick_match) => nick_match[1].to_owned(),
+            None =>  "UNKNOWN".into(),
         };
         debug!("{} {}", chan, msg);
 
@@ -158,7 +156,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let url = &cap[1];
             info!("Detected url: {}", url);
             // This may fail because of the unique index and then we don't care.
-            let _ = add_url(&sqc, table, Utc::now().timestamp(), chan, nick, url);
+            let _ = add_url(&sqc, table, Utc::now().timestamp(), chan, &nick, url);
         }
     }
     sqc.close().unwrap();
