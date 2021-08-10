@@ -154,9 +154,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         for cap in re_url.captures_iter(msg) {
             let url = &cap[1];
-            info!("Detected url: {}", url);
+            info!("Detected url: {} {} {}", chan, &nick, url);
             // This may fail because of the unique index and then we don't care.
-            let _ = add_url(&sqc, table, Utc::now().timestamp(), chan, &nick, url);
+            match add_url(&sqc, table, Utc::now().timestamp(), chan, &nick, url) {
+                Ok(_) => info!("Saved."),
+                Err(_) => error!("Save failed.")
+            }
         }
     }
     sqc.close().unwrap();
