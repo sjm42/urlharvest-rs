@@ -30,7 +30,7 @@ pub struct GlobalOptions {
     pub irc_log_dir: String,
     #[structopt(long, default_value = "$HOME/urllog/data/urllog2.db")]
     pub db_file: String,
-    #[structopt(long, default_value = "urllog")]
+    #[structopt(long, default_value = "urllog2")]
     pub db_table: String,
     #[structopt(long, default_value = r#"^(#\S*)\.log$"#)]
     pub re_log: String,
@@ -38,7 +38,7 @@ pub struct GlobalOptions {
     pub re_nick: String,
     #[structopt(
         long,
-        default_value = r#"(https?://[\w/',":;!%@=\-\.\~\?\#\[\]\$\&\(\)\*\+]+)"#
+        default_value = r#"(https?://[\w/',":;!%@=\-\.\~\?\#\[\]\{\}\$\&\(\)\*\+]+[^\s'"\)\]\}])"#
     )]
     pub re_url: String,
 }
