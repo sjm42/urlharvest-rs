@@ -1,11 +1,11 @@
 // main.rs
-#![feature(once_cell)]
+// #![feature(once_cell)]
 
 use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use rusqlite::{named_params, Connection};
+use rusqlite::{Statement, Connection, named_params};
 use std::{
     collections::HashMap,
     env,
@@ -13,10 +13,12 @@ use std::{
     ffi::*,
     fs::{self, DirEntry, File},
     io::{BufRead, BufReader},
-    lazy::*,
+    time::Instant,
 };
 use structopt::StructOpt;
-use tokio::sync::RwLock;
+
+const TX_SZ: usize = 1000;
+const VEC_SZ: usize = 64;
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -43,8 +45,13 @@ pub struct GlobalOptions {
     pub re_url: String,
 }
 
-fn check_table(c: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
-    let mut st = c.prepare(
+struct MyContext {
+    re_nick: Regex,
+    re_url: Regex,
+}
+
+fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
+    let mut st = dbc.prepare(
         "select count(name) from sqlite_master \
         where type='table' and name=?",
     )?;
@@ -72,66 +79,39 @@ fn check_table(c: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
         );
         info!("Creating new DB table+indexes.");
         debug!("SQL:\n{}", &sql);
-        c.execute_batch(&sql)?;
+        dbc.execute_batch(&sql)?;
     }
     Ok(())
 }
 
-fn add_url(
-    c: &Connection,
-    ta: &str,
-    ts: i64,
-    ch: &str,
-    ni: &str,
-    ur: &str,
-) -> Result<(), Box<dyn Error>> {
-    let sql_i = &format!(
-        "insert into {} (id, first_seen, last_seen, num_seen, channel, nick, url) \
-        values (null, :ts, :ts, 1, :ch, :ni, :ur)",
-        ta
-    );
-    let mut st_i = c.prepare_cached(sql_i)?;
-    if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": ch, ":ni": ni, ":ur": ur}) {
-        debug!("Inserted {} row", n);
-        return Ok(());
-    }
-    // Insert failed, we must already have it. Channel+URL must be unique.
-    // Do an update instead.
-    let sql_u = &format!(
-        "update {} set last_seen=:ts, num_seen=num_seen+1, nick=:ni \
-        where channel=:ch and url=:ur",
-        ta
-    );
-    let mut st_u = c.prepare_cached(sql_u)?;
-    if let Ok(n) = st_u.execute(named_params! {":ts": ts, ":ch": ch, ":ni": ni, ":ur": ur}) {
-        debug!("Updated {} row(s)", n);
-        return Ok(());
-    }
-    Err("Insert AND update failed, WTF?".into())
-}
-
-static RE_NICK: SyncLazy<RwLock<Regex>> = SyncLazy::new(|| RwLock::new(Regex::new("").unwrap()));
-static RE_URL: SyncLazy<RwLock<Regex>> = SyncLazy::new(|| RwLock::new(Regex::new("").unwrap()));
-
 async fn handle_msg(
-    c: &Connection,
-    table: &str,
+    ctx: &MyContext,
+    st_i: &mut Statement<'_>,
+    st_u: &mut Statement<'_>,
     ts: i64,
     chan: &str,
     msg: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let re_nick = RE_NICK.read().await;
-    let re_url = RE_URL.read().await;
-    let nick = match re_nick.captures(msg) {
+    let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
     };
     trace!("{} {}", chan, msg);
 
-    for url_cap in re_url.captures_iter(msg) {
+    for url_cap in ctx.re_url.captures_iter(msg) {
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
-        let _ = add_url(c, table, ts, chan, &nick, url);
+        if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+            debug!("Inserted {} row", n);
+            return Ok(());
+        }
+        // Insert failed, we must already have it. Channel+URL must be unique.
+        // Do an update instead.
+        if let Ok(n) = st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+            debug!("Updated {} row(s)", n);
+            return Ok(());
+        }
+        return Err("Insert AND update failed, WTF?".into());
     }
     Ok(())
 }
@@ -161,22 +141,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
     debug!("Global config: {:?}", opt);
 
-    let sqc = Connection::open(&opt.db_file)?;
+    let ctx = MyContext {
+        re_nick: Regex::new(&opt.re_nick)?,
+        re_url: Regex::new(&opt.re_url)?,
+    };
+
+    let dbc = Connection::open(&opt.db_file)?;
     let table = &opt.db_table;
-    check_table(&sqc, table)?;
+    check_table(&dbc, table)?;
 
-    // pre-compile our regexes
+    let sql_i = format!(
+        "insert into {} (id, first_seen, last_seen, num_seen, channel, nick, url) \
+        values (null, :ts, :ts, 1, :ch, :ni, :ur)",
+        table
+    );
+    let sql_u = format!(
+        "update {} set last_seen=:ts, num_seen=num_seen+1, nick=:ni \
+        where channel=:ch and url=:ur",
+        table
+    );
+    let mut st_i = dbc.prepare(&sql_i)?;
+    let mut st_u = dbc.prepare(&sql_u)?;
+
     let re_log = Regex::new(&opt.re_log)?;
-    {
-        let mut n = RE_NICK.write().await;
-        *n = Regex::new(&opt.re_nick)?;
-        let mut u = RE_URL.write().await;
-        *u = Regex::new(&opt.re_url)?;
-    }
-
     let mut lmux = MuxedLines::new()?;
-    let mut chans: HashMap<OsString, String> = HashMap::with_capacity(16);
-    let mut log_files: Vec<DirEntry> = Vec::with_capacity(16);
+    let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
+    let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
 
     debug!("Scanning dir {}", &opt.irc_log_dir);
     for log_f in fs::read_dir(&opt.irc_log_dir)? {
@@ -193,17 +183,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("My chans: {:?}", chans);
 
     let chan_unk = &"<UNKNOWN>".to_string();
-
     if opt.read_history {
+        let mut tx_i: usize = 0;
+        dbc.execute_batch("begin")?;
+
+        // Save the start time to measure elapsed
+        let start_ts = Instant::now();
         // Seed the database with all the old log lines too
         info!("Reading history...");
         // "--- Log opened Sun Aug 08 13:37:42 2021"
-        let re_timestamp =
-            Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
+        let re_ts = Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
         // "--- Day changed Fri Aug 13 2021"
         let re_daychange = Regex::new(r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#)?;
         // "13:37 <@sjm> 1337"
-        let re_hourmin = Regex::new(r#"^(\d\d):(\d\d)"#)?;
+        let re_hourmin = Regex::new(r#"^(\d\d):(\d\d)\s"#)?;
 
         for log_f in &log_files {
             let log_nopath = log_f.path().file_name().unwrap().to_os_string();
@@ -212,7 +205,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut current_ts = Local::now();
             for (_index, line) in reader.lines().enumerate() {
                 let msg = line?;
-                if let Some(re_match) = re_timestamp.captures(&msg) {
+                tx_i += 1;
+                if tx_i >= TX_SZ {
+                    dbc.execute_batch("commit")?;
+                    dbc.execute_batch("begin")?;
+                    tx_i = 0;
+                }
+                if let Some(re_match) = re_hourmin.captures(&msg) {
+                    let hh = &re_match[1];
+                    let mm = &re_match[2];
+                    let s = format!("{}{}00", hh, mm);
+                    if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
+                        current_ts = current_ts.date().and_time(new_localtime).unwrap();
+                    }
+                }
+                else if let Some(re_match) = re_daychange.captures(&msg) {
+                    let mon = &re_match[1];
+                    let day = &re_match[2];
+                    let year = &re_match[3];
+                    let s = format!("{}{}{}", year, mon, day);
+                    if let Ok(naive_date) = NaiveDate::parse_from_str(&s, "%Y%b%d") {
+                        let naive_ts = naive_date.and_hms(0, 0, 0);
+                        if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+                            trace!("Found daychange {:?}", new_ts);
+                            current_ts = new_ts;
+                        }
+                    }
+                }
+                else if let Some(re_match) = re_ts.captures(&msg) {
                     let mon = &re_match[1];
                     let day = &re_match[2];
                     let hh = &re_match[3];
@@ -220,36 +240,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let ss = &re_match[5];
                     let year = &re_match[6];
                     let s = format!("{}{}{}-{}{}{}", year, mon, day, hh, mm, ss);
-                    let new_local_ts = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S")
-                        .unwrap_or_else(|_| NaiveDateTime::from_timestamp(0, 0));
-                    current_ts = Local.from_local_datetime(&new_local_ts).unwrap();
-                    trace!("Found TS {:?}", current_ts);
+                    if let Ok(naive_ts) = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S") {
+                        if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+                            trace!("Found TS {:?}", new_ts);
+                            current_ts = new_ts;
+                        }
+                    }
                 }
-                if let Some(re_match) = re_daychange.captures(&msg) {
-                    let mon = &re_match[1];
-                    let day = &re_match[2];
-                    let year = &re_match[3];
-                    let s = format!("{}{}{}", year, mon, day);
-
-                    let new_localdate = NaiveDate::parse_from_str(&s, "%Y%b%d")
-                        .unwrap_or_else(|_| NaiveDate::from_yo(1970, 1))
-                        .and_hms(0, 0, 0);
-                    current_ts = Local.from_local_datetime(&new_localdate).unwrap();
-                    trace!("Found daychange {:?}", current_ts);
-                }
-                if let Some(re_match) = re_hourmin.captures(&msg) {
-                    let hh = &re_match[1];
-                    let mm = &re_match[2];
-                    let s = format!("{}{}00", hh, mm);
-                    let new_localtime = NaiveTime::parse_from_str(&s, "%H%M%S")
-                        .unwrap_or_else(|_| NaiveTime::from_hms(0, 0, 0));
-                    current_ts = current_ts.date().and_time(new_localtime).unwrap();
-                }
-                let _ = handle_msg(&sqc, table, current_ts.timestamp(), chan, &msg).await;
+                let _ = handle_msg(&ctx, &mut st_i, &mut st_u, current_ts.timestamp(), chan, &msg).await;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
         }
+        dbc.execute_batch("commit")?;
+        info!("History read completed in {:.3} s", start_ts.elapsed().as_millis() as f64 / 1000.0);
     } else {
         for log_f in &log_files {
             lmux.add_file(log_f.path()).await?;
@@ -264,9 +268,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        let _ = handle_msg(&sqc, table, Utc::now().timestamp(), chan, msg).await;
+        let _ = handle_msg(&ctx, &mut st_i, &mut st_u, Utc::now().timestamp(), chan, msg).await;
     }
-    sqc.close().unwrap();
     Ok(())
 }
 // EOF
