@@ -1,5 +1,4 @@
 // main.rs
-// #![feature(once_cell)]
 
 use chrono::*;
 use linemux::MuxedLines;
@@ -17,7 +16,7 @@ use std::{
 };
 use structopt::StructOpt;
 
-const TX_SZ: usize = 1000;
+const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
 
 #[derive(Debug, Clone, StructOpt)]
@@ -91,7 +90,7 @@ async fn handle_msg(
     ts: i64,
     chan: &str,
     msg: &str,
-) -> Result<(), Box<dyn Error>> {
+) {
     let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
@@ -103,17 +102,16 @@ async fn handle_msg(
         info!("Detected url: {} {} {}", chan, &nick, url);
         if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
             debug!("Inserted {} row", n);
-            return Ok(());
         }
         // Insert failed, we must already have it. Channel+URL must be unique.
         // Do an update instead.
-        if let Ok(n) = st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+        else if let Ok(n) = st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
             debug!("Updated {} row(s)", n);
-            return Ok(());
         }
-        return Err("Insert AND update failed, WTF?".into());
+        else {
+            error!("Insert AND update failed, WTF?");
+        }
     }
-    Ok(())
 }
 
 #[tokio::main]
@@ -164,7 +162,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut st_u = dbc.prepare(&sql_u)?;
 
     let re_log = Regex::new(&opt.re_log)?;
-    let mut lmux = MuxedLines::new()?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
     let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
 
@@ -182,6 +179,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("My logfiles: {:?}", log_files);
     debug!("My chans: {:?}", chans);
 
+    let mut lmux = MuxedLines::new()?;
     let chan_unk = &"<UNKNOWN>".to_string();
     if opt.read_history {
         let mut tx_i: usize = 0;
@@ -247,7 +245,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                let _ = handle_msg(&ctx, &mut st_i, &mut st_u, current_ts.timestamp(), chan, &msg).await;
+                handle_msg(&ctx, &mut st_i, &mut st_u, current_ts.timestamp(), chan, &msg).await;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -268,7 +266,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        let _ = handle_msg(&ctx, &mut st_i, &mut st_u, Utc::now().timestamp(), chan, msg).await;
+        handle_msg(&ctx, &mut st_i, &mut st_u, Utc::now().timestamp(), chan, msg).await;
     }
     Ok(())
 }
