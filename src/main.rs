@@ -4,7 +4,7 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use rusqlite::{Statement, Connection, named_params};
+use rusqlite::{named_params, Connection, Statement};
 use std::{
     collections::HashMap,
     env,
@@ -100,15 +100,17 @@ async fn handle_msg(
     for url_cap in ctx.re_url.captures_iter(msg) {
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
-        if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+        if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url})
+        {
             debug!("Inserted {} row", n);
         }
         // Insert failed, we must already have it. Channel+URL must be unique.
         // Do an update instead.
-        else if let Ok(n) = st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+        else if let Ok(n) =
+            st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url})
+        {
             debug!("Updated {} row(s)", n);
-        }
-        else {
+        } else {
             error!("Insert AND update failed, WTF?");
         }
     }
@@ -216,8 +218,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
                         current_ts = current_ts.date().and_time(new_localtime).unwrap();
                     }
-                }
-                else if let Some(re_match) = re_daychange.captures(&msg) {
+                } else if let Some(re_match) = re_daychange.captures(&msg) {
                     let mon = &re_match[1];
                     let day = &re_match[2];
                     let year = &re_match[3];
@@ -229,8 +230,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             current_ts = new_ts;
                         }
                     }
-                }
-                else if let Some(re_match) = re_ts.captures(&msg) {
+                } else if let Some(re_match) = re_ts.captures(&msg) {
                     let mon = &re_match[1];
                     let day = &re_match[2];
                     let hh = &re_match[3];
@@ -245,13 +245,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(&ctx, &mut st_i, &mut st_u, current_ts.timestamp(), chan, &msg).await;
+                handle_msg(
+                    &ctx,
+                    &mut st_i,
+                    &mut st_u,
+                    current_ts.timestamp(),
+                    chan,
+                    &msg,
+                )
+                .await;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
         }
         dbc.execute_batch("commit")?;
-        info!("History read completed in {:.3} s", start_ts.elapsed().as_millis() as f64 / 1000.0);
+        info!(
+            "History read completed in {:.3} s",
+            start_ts.elapsed().as_millis() as f64 / 1000.0
+        );
     } else {
         for log_f in &log_files {
             lmux.add_file(log_f.path()).await?;
@@ -266,7 +277,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(&ctx, &mut st_i, &mut st_u, Utc::now().timestamp(), chan, msg).await;
+        handle_msg(
+            &ctx,
+            &mut st_i,
+            &mut st_u,
+            Utc::now().timestamp(),
+            chan,
+            msg,
+        )
+        .await;
     }
     Ok(())
 }
