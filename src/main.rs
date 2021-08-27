@@ -62,17 +62,14 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
             "begin;
             create table {table} (
             id integer primary key autoincrement,
-            first_seen integer,
-            last_seen integer,
-            num_seen integer,
+            seen integer,
             channel text,
             nick text,
             url text);
-            create index {table}_last_seen on {table}(last_seen);
-            create index {table}_num_seen on {table}(num_seen);
+            create index {table}_seen on {table}(seen);
             create index {table}_channel on {table}(channel);
             create index {table}_nick on {table}(nick);
-            create unique index {table}_unique on {table}(channel, url);
+            create index {table}_url on {table}(url);
             commit;",
             table = table
         );
@@ -83,14 +80,7 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn handle_msg(
-    ctx: &MyContext,
-    st_i: &mut Statement<'_>,
-    st_u: &mut Statement<'_>,
-    ts: i64,
-    chan: &str,
-    msg: &str,
-) {
+async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &str, msg: &str) {
     let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
@@ -103,15 +93,8 @@ async fn handle_msg(
         if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url})
         {
             debug!("Inserted {} row", n);
-        }
-        // Insert failed, we must already have it. Channel+URL must be unique.
-        // Do an update instead.
-        else if let Ok(n) =
-            st_u.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url})
-        {
-            debug!("Updated {} row(s)", n);
         } else {
-            error!("Insert AND update failed, WTF?");
+            error!("Insert failed, WTF?");
         }
     }
 }
@@ -151,17 +134,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     check_table(&dbc, table)?;
 
     let sql_i = format!(
-        "insert into {} (id, first_seen, last_seen, num_seen, channel, nick, url) \
-        values (null, :ts, :ts, 1, :ch, :ni, :ur)",
-        table
-    );
-    let sql_u = format!(
-        "update {} set last_seen=:ts, num_seen=num_seen+1, nick=:ni \
-        where channel=:ch and url=:ur",
+        "insert into {} (id, seen, channel, nick, url) \
+        values (null, :ts, :ch, :ni, :ur)",
         table
     );
     let mut st_i = dbc.prepare(&sql_i)?;
-    let mut st_u = dbc.prepare(&sql_u)?;
 
     let re_log = Regex::new(&opt.re_log)?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
@@ -245,15 +222,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(
-                    &ctx,
-                    &mut st_i,
-                    &mut st_u,
-                    current_ts.timestamp(),
-                    chan,
-                    &msg,
-                )
-                .await;
+                handle_msg(&ctx, &mut st_i, current_ts.timestamp(), chan, &msg).await;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -277,15 +246,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(
-            &ctx,
-            &mut st_i,
-            &mut st_u,
-            Utc::now().timestamp(),
-            chan,
-            msg,
-        )
-        .await;
+        handle_msg(&ctx, &mut st_i, Utc::now().timestamp(), chan, msg).await;
     }
     Ok(())
 }
