@@ -5,15 +5,10 @@ use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
 use rusqlite::{named_params, Connection, Statement};
-use std::{
-    collections::HashMap,
-    env,
-    error::Error,
-    ffi::*,
-    fs::{self, DirEntry, File},
-    io::{BufRead, BufReader},
-    time::Instant,
-};
+use std::fs::{self, DirEntry, File};
+use std::io::{BufRead, BufReader};
+use std::{collections::HashMap, error::Error, time::Instant};
+use std::{env, ffi::*};
 use structopt::StructOpt;
 
 const TX_SZ: usize = 1024;
