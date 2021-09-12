@@ -88,7 +88,7 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
         let mut retry = 0;
-        while retry < RETRY_CNT {
+        while retry <= RETRY_CNT {
             match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
                 Ok(n) => {
                     info!("Inserted {} row", n);
