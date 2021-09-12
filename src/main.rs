@@ -87,7 +87,7 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
         info!("Detected url: {} {} {}", chan, &nick, url);
         match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
             Ok(n) => {
-                debug!("Inserted {} row", n);
+                info!("Inserted {} row", n);
             }
             Err(e) => {
                 error!("Insert failed: {}", e);
