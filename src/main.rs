@@ -85,11 +85,13 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
     for url_cap in ctx.re_url.captures_iter(msg) {
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
-        if let Ok(n) = st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url})
-        {
-            debug!("Inserted {} row", n);
-        } else {
-            error!("Insert failed, WTF?");
+        match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+            Ok(n) => {
+                debug!("Inserted {} row", n);
+            }
+            Err(e) => {
+                error!("Insert failed: {}", e);
+            }
         }
     }
 }
