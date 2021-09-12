@@ -4,7 +4,7 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use rusqlite::{named_params, Connection, Statement};
+use rusqlite::{named_params, Connection};
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, error::Error, time::Instant};
@@ -77,7 +77,14 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &str, msg: &str) {
+async fn handle_msg(
+    ctx: &MyContext,
+    dbc: &Connection,
+    table: &str,
+    ts: i64,
+    chan: &str,
+    msg: &str,
+) {
     let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
@@ -88,6 +95,12 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
         let mut retry = 0;
+        let sql_i = format!(
+            "insert into {} (id, seen, channel, nick, url) \
+            values (null, :ts, :ch, :ni, :ur)",
+            table
+        );
+        let mut st_i = dbc.prepare(&sql_i).unwrap();
         while retry < RETRY_CNT {
             match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
                 Ok(n) => {
@@ -142,13 +155,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let dbc = Connection::open(&opt.db_file)?;
     let table = &opt.db_table;
     check_table(&dbc, table)?;
-
-    let sql_i = format!(
-        "insert into {} (id, seen, channel, nick, url) \
-        values (null, :ts, :ch, :ni, :ur)",
-        table
-    );
-    let mut st_i = dbc.prepare(&sql_i)?;
 
     let re_log = Regex::new(&opt.re_log)?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
@@ -232,7 +238,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(&ctx, &mut st_i, current_ts.timestamp(), chan, &msg).await;
+                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg).await;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -256,7 +262,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(&ctx, &mut st_i, Utc::now().timestamp(), chan, msg).await;
+        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg).await;
     }
     Ok(())
 }
