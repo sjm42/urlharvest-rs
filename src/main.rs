@@ -8,11 +8,13 @@ use rusqlite::{named_params, Connection, Statement};
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, error::Error, time::Instant};
-use std::{env, ffi::*};
+use std::{env, ffi::*, thread, time};
 use structopt::StructOpt;
 
 const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
+const RETRY_CNT: usize = 5;
+const RETRY_SLEEP: u64 = 1;
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -85,14 +87,22 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
     for url_cap in ctx.re_url.captures_iter(msg) {
         let url = &url_cap[1];
         info!("Detected url: {} {} {}", chan, &nick, url);
-        match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
-            Ok(n) => {
-                info!("Inserted {} row", n);
+        let mut retry = 0;
+        while retry < RETRY_CNT {
+            match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
+                Ok(n) => {
+                    info!("Inserted {} row", n);
+                    break;
+                }
+                Err(e) => {
+                    error!("Insert failed: {}", e);
+                }
             }
-            Err(e) => {
-                error!("Insert failed: {}", e);
-            }
+            error!("Retrying in {}s...", RETRY_SLEEP);
+            thread::sleep(time::Duration::new(RETRY_SLEEP, 0));
+            retry += 1;
         }
+        error!("GIVING UP after {} retries.", retry);
     }
 }
 
