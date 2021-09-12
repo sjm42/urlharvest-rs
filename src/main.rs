@@ -102,7 +102,9 @@ async fn handle_msg(ctx: &MyContext, st_i: &mut Statement<'_>, ts: i64, chan: &s
             thread::sleep(time::Duration::new(RETRY_SLEEP, 0));
             retry += 1;
         }
-        error!("GIVING UP after {} retries.", retry);
+        if retry >= RETRY_CNT {
+            error!("GAVE UP after {} retries.", retry);
+        }
     }
 }
 
