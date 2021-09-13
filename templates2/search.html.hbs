@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>URL Log search</title>
+  <style type="text/css">
+    body {
+      background-color: white;
+      font-family: serif;
+    }
+
+    table {
+      display: block;
+      overflow-x: auto;
+      white-space: nowrap;
+      border: 0px;
+      width: 90%;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f0f0f0;
+    }
+
+    th,
+    td {
+      text-align: left;
+      vertical-align: top;
+      padding-top: 3px;
+      padding-bottom: 3px;
+      padding-left: 8px;
+      padding-right: 8px;
+      font-family: monospace;
+    }
+
+    td:nth-child(5) {
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>URL Log search</h1>
+  <p>Wildcards <b>*</b> and <b>?</b> can be used. The search is case insensitive.<br>
+    Results are sorted chronologically and limited to first 100 hits. Good luck.</p>
+  <form id="search">
+    chan: <input type="text" id="chan" name="chan">
+    nick: <input type="text" id="nick" name="nick">
+    url: <input type="text" id="url" name="url">
+    title: <input type="text" id="title" name="title">
+    <input type="button" value="SEARCH" onclick="search_url(this.form)">
+  </form>
+  <h2>Results:</h2>
+  <div id="results" style="background-color: #F0F0F0 ; padding: 10px; border: 2px solid gray">
+    Search results
+  </div>
+  <br>
+</body>
+
+<script>
+  function search_url(form) {
+    var o = document.getElementById("results");
+    o.innerHTML = "wait...";
+    const Http = new XMLHttpRequest();
+    const params = {
+      chan: form.chan.value,
+      nick: form.nick.value,
+      url: form.url.value,
+      title: form.title.value,
+    };
+    const url = "{{cmd_search}}?" + (new URLSearchParams(params)).toString();
+    console.log("URL: " + url);
+    Http.open("GET", url, true);
+    Http.send();
+    Http.onreadystatechange = (e) => {
+      const html = Http.responseText;
+      console.log("Got HTML:\n" + html);
+      o.innerHTML = "Search results from " + Date() + "<br>" + html + "<br>";
+    }
+  }
+</script>
+
+</html>
