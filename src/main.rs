@@ -96,6 +96,7 @@ fn handle_msg(
     ts: i64,
     chan: &str,
     msg: &str,
+    update_change: bool,
 ) -> Result<(), Box<dyn Error>> {
     let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
@@ -117,7 +118,9 @@ fn handle_msg(
             match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
                 Ok(n) => {
                     info!("Inserted {} row", n);
-                    mark_change(dbc, table)?;
+                    if update_change {
+                        mark_change(dbc, table)?;
+                    }
                     retry = 0;
                     break;
                 }
@@ -252,7 +255,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg)?;
+                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg, false)?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -276,7 +279,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg)?;
+        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg, true)?;
     }
     Ok(())
 }
