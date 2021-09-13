@@ -56,17 +56,19 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
         info!("DB table exists.");
     } else {
         let sql = format!(
-            "begin;
-            create table {table} (
-            id integer primary key autoincrement,
-            seen integer,
-            channel text,
-            nick text,
-            url text);
-            create index {table}_seen on {table}(seen);
-            create index {table}_channel on {table}(channel);
-            create index {table}_nick on {table}(nick);
-            create index {table}_url on {table}(url);
+            "begin; \
+            create table {table} ( \
+            id integer primary key autoincrement, \
+            seen integer, \
+            channel text, \
+            nick text, \
+            url text); \
+            create index {table}_seen on {table}(seen); \
+            create index {table}_channel on {table}(channel); \
+            create index {table}_nick on {table}(nick); \
+            create index {table}_url on {table}(url); \
+            create table {table}_changed (last integer); \
+            insert into {table}_changed values (0); \
             commit;",
             table = table
         );
@@ -77,14 +79,24 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn handle_msg(
+fn mark_change(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
+    let sql = format!(
+        "update table {table}_changed set last={ts};",
+        table = table,
+        ts = Utc::now().timestamp()
+    );
+    dbc.execute_batch(&sql)?;
+    Ok(())
+}
+
+fn handle_msg(
     ctx: &MyContext,
     dbc: &Connection,
     table: &str,
     ts: i64,
     chan: &str,
     msg: &str,
-) {
+) -> Result<(), Box<dyn Error>> {
     let nick = match ctx.re_nick.captures(msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
@@ -100,11 +112,12 @@ async fn handle_msg(
             values (null, :ts, :ch, :ni, :ur)",
             table
         );
-        let mut st_i = dbc.prepare(&sql_i).unwrap();
+        let mut st_i = dbc.prepare(&sql_i)?;
         while retry < RETRY_CNT {
             match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
                 Ok(n) => {
                     info!("Inserted {} row", n);
+                    mark_change(dbc, table)?;
                     retry = 0;
                     break;
                 }
@@ -120,6 +133,7 @@ async fn handle_msg(
             error!("GAVE UP after {} retries.", RETRY_CNT);
         }
     }
+    Ok(())
 }
 
 #[tokio::main]
@@ -238,7 +252,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg).await;
+                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg)?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -262,7 +276,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg).await;
+        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg)?;
     }
     Ok(())
 }
