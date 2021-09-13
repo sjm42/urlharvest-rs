@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>#42 URL log</title>
+    <style type="text/css">
+        body {
+            background-color: white;
+            font-family: serif;
+        }
+
+        table {
+            display: block;
+            overflow-x: auto;
+            white-space: nowrap;
+            border: 0px;
+            width: 90%;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f0f0f0;
+        }
+
+        th,
+        td {
+            text-align: left;
+            vertical-align: top;
+            padding-top: 3px;
+            padding-bottom: 3px;
+            padding-left: 8px;
+            padding-right: 8px;
+            font-family: monospace;
+        }
+
+        td:nth-child(5) {
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>#42 URL log</h1>
+    <h3>Last 7 days -- all timestamps are UTC</h3>
+    <p>Page updated {{last_change}}</p>
+    <hr>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>First seen</th>
+            <th>Last seen</th>
+            <th>#</th>
+            <th>URL</th>
+        </tr>
+        {% for id_i in id -%}
+        {% if channel[loop.index0] == "#42" -%}
+        <tr>
+            {% if num_seen[loop.index0] > 1 -%}
+            <td>{{id_i}}</td>
+            <td><b>{{first_seen[loop.index0]}}</b></td>
+            <td>{{last_seen[loop.index0]}}</td>
+            <td><b>{{num_seen[loop.index0]}}</b></td>
+            {% else -%}
+            <td>{{id_i}}</td>
+            <td>{{first_seen[loop.index0]}}</td>
+            <td>{{last_seen[loop.index0]}}</td>
+            <td>{{num_seen[loop.index0]}}</td>
+            {% endif -%}
+            <td>{{title[loop.index0]}}<br>
+                <a href="{{url[loop.index0]}}">{{url[loop.index0]}}</a>
+            </td>
+        </tr>
+        {% endif -%}
+        {% endfor -%}
+    </table>
+</body>
+
+</html>
