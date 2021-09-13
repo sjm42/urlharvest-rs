@@ -81,7 +81,7 @@ fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
 
 fn mark_change(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
     let sql = format!(
-        "update table {table}_changed set last={ts};",
+        "update {table}_changed set last={ts};",
         table = table,
         ts = Utc::now().timestamp()
     );
