@@ -4,17 +4,17 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use rusqlite::{named_params, Connection};
+use rusqlite::Connection;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, error::Error, time::Instant};
-use std::{env, ffi::*, thread, time};
+use std::{env, ffi::*};
 use structopt::StructOpt;
+
+use urlharvest::*;
 
 const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
-const RETRY_CNT: usize = 5;
-const RETRY_SLEEP: u64 = 1;
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct GlobalOptions {
@@ -29,7 +29,9 @@ pub struct GlobalOptions {
     #[structopt(long, default_value = "$HOME/urllog/data/urllog2.db")]
     pub db_file: String,
     #[structopt(long, default_value = "urllog2")]
-    pub db_table: String,
+    pub table_url: String,
+    #[structopt(long, default_value = "urlmeta")]
+    pub table_meta: String,
     #[structopt(long, default_value = r#"^(#\S*)\.log$"#)]
     pub re_log: String,
     #[structopt(long, default_value = r#"^[:\d]+\s+[<\*][%@\~\&\+\s]*([^>\s]+)>?\s+"#)]
@@ -41,100 +43,31 @@ pub struct GlobalOptions {
     pub re_url: String,
 }
 
-struct MyContext {
-    re_nick: Regex,
-    re_url: Regex,
-}
-
-fn check_table(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
-    let mut st = dbc.prepare(
-        "select count(name) from sqlite_master \
-        where type='table' and name=?",
-    )?;
-    let n: i32 = st.query([table])?.next()?.unwrap().get(0)?;
-    if n == 1 {
-        info!("DB table exists.");
-    } else {
-        let sql = format!(
-            "begin; \
-            create table {table} ( \
-            id integer primary key autoincrement, \
-            seen integer, \
-            channel text, \
-            nick text, \
-            url text); \
-            create index {table}_seen on {table}(seen); \
-            create index {table}_channel on {table}(channel); \
-            create index {table}_nick on {table}(nick); \
-            create index {table}_url on {table}(url); \
-            create table {table}_changed (last integer); \
-            insert into {table}_changed values (0); \
-            commit;",
-            table = table
-        );
-        info!("Creating new DB table+indexes.");
-        debug!("SQL:\n{}", &sql);
-        dbc.execute_batch(&sql)?;
-    }
-    Ok(())
-}
-
-fn mark_change(dbc: &Connection, table: &str) -> Result<(), Box<dyn Error>> {
-    let sql = format!(
-        "update {table}_changed set last={ts};",
-        table = table,
-        ts = Utc::now().timestamp()
-    );
-    dbc.execute_batch(&sql)?;
-    Ok(())
-}
-
-fn handle_msg(
-    ctx: &MyContext,
-    dbc: &Connection,
-    table: &str,
+struct IrcCtx<'a> {
+    re_nick: &'a Regex,
+    re_url: &'a Regex,
     ts: i64,
-    chan: &str,
-    msg: &str,
-    update_change: bool,
-) -> Result<(), Box<dyn Error>> {
-    let nick = match ctx.re_nick.captures(msg) {
+    chan: &'a str,
+    msg: &'a str,
+}
+
+fn handle_ircmsg(db: &DbCtx, ctx: &IrcCtx) -> Result<(), Box<dyn Error>> {
+    let nick = match ctx.re_nick.captures(ctx.msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
     };
-    trace!("{} {}", chan, msg);
+    trace!("{} {}", ctx.chan, ctx.msg);
 
-    for url_cap in ctx.re_url.captures_iter(msg) {
+    for url_cap in ctx.re_url.captures_iter(ctx.msg) {
         let url = &url_cap[1];
-        info!("Detected url: {} {} {}", chan, &nick, url);
-        let mut retry = 0;
-        let sql_i = format!(
-            "insert into {} (id, seen, channel, nick, url) \
-            values (null, :ts, :ch, :ni, :ur)",
-            table
-        );
-        let mut st_i = dbc.prepare(&sql_i)?;
-        while retry < RETRY_CNT {
-            match st_i.execute(named_params! {":ts": ts, ":ch": chan, ":ni": nick, ":ur": url}) {
-                Ok(n) => {
-                    info!("Inserted {} row", n);
-                    if update_change {
-                        mark_change(dbc, table)?;
-                    }
-                    retry = 0;
-                    break;
-                }
-                Err(e) => {
-                    error!("Insert failed: {}", e);
-                }
-            }
-            error!("Retrying in {}s...", RETRY_SLEEP);
-            thread::sleep(time::Duration::new(RETRY_SLEEP, 0));
-            retry += 1;
-        }
-        if retry > 0 {
-            error!("GAVE UP after {} retries.", RETRY_CNT);
-        }
+        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
+        let u = UrlCtx {
+            ts: ctx.ts,
+            chan: ctx.chan,
+            nick: &nick,
+            url,
+        };
+        db_add_url(db, &u)?;
     }
     Ok(())
 }
@@ -164,14 +97,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
     debug!("Global config: {:?}", opt);
 
-    let ctx = MyContext {
-        re_nick: Regex::new(&opt.re_nick)?,
-        re_url: Regex::new(&opt.re_url)?,
+    let dbc = &Connection::open(&opt.db_file)?;
+    let table_url = &opt.table_url;
+    let table_meta = &opt.table_meta;
+    let db = DbCtx {
+        dbc,
+        table_url,
+        table_meta,
+        update_change: false,
     };
+    db_init(&db)?;
 
-    let dbc = Connection::open(&opt.db_file)?;
-    let table = &opt.db_table;
-    check_table(&dbc, table)?;
+    let re_nick = &Regex::new(&opt.re_nick)?;
+    let re_url = &Regex::new(&opt.re_url)?;
 
     let re_log = Regex::new(&opt.re_log)?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
@@ -214,21 +152,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let reader = BufReader::new(File::open(log_f.path())?);
             let mut current_ts = Local::now();
             for (_index, line) in reader.lines().enumerate() {
-                let msg = line?;
+                let msg = &line?;
                 tx_i += 1;
                 if tx_i >= TX_SZ {
                     dbc.execute_batch("commit")?;
                     dbc.execute_batch("begin")?;
                     tx_i = 0;
                 }
-                if let Some(re_match) = re_hourmin.captures(&msg) {
+                if let Some(re_match) = re_hourmin.captures(msg) {
                     let hh = &re_match[1];
                     let mm = &re_match[2];
                     let s = format!("{}{}00", hh, mm);
                     if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
                         current_ts = current_ts.date().and_time(new_localtime).unwrap();
                     }
-                } else if let Some(re_match) = re_daychange.captures(&msg) {
+                } else if let Some(re_match) = re_daychange.captures(msg) {
                     let mon = &re_match[1];
                     let day = &re_match[2];
                     let year = &re_match[3];
@@ -240,7 +178,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             current_ts = new_ts;
                         }
                     }
-                } else if let Some(re_match) = re_ts.captures(&msg) {
+                } else if let Some(re_match) = re_ts.captures(msg) {
                     let mon = &re_match[1];
                     let day = &re_match[2];
                     let hh = &re_match[3];
@@ -255,7 +193,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                handle_msg(&ctx, &dbc, table, current_ts.timestamp(), chan, &msg, false)?;
+
+                let ctx = IrcCtx {
+                    re_nick,
+                    re_url,
+                    ts: current_ts.timestamp(),
+                    chan,
+                    msg,
+                };
+                handle_ircmsg(&db, &ctx)?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -279,7 +225,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(chan_unk);
         let msg = msg_line.line();
-        handle_msg(&ctx, &dbc, table, Utc::now().timestamp(), chan, msg, true)?;
+        let ctx = IrcCtx {
+            re_nick,
+            re_url,
+            ts: Utc::now().timestamp(),
+            chan,
+            msg,
+        };
+        let db_live = DbCtx {
+            update_change: true,
+            ..db
+        };
+        handle_ircmsg(&db_live, &ctx)?;
     }
     Ok(())
 }

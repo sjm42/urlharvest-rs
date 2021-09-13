@@ -1,6 +1,6 @@
 [package]
-name = "irssi-urlharvest"
-version = "0.2.0"
+name = "urlharvest"
+version = "0.3.0"
 edition = "2018"
 resolver = "2"
 
@@ -16,6 +16,7 @@ regex = "*"
 rusqlite = "*"
 structopt = "*"
 tokio = { version = "*", features = ["full"] }
+webpage = "*"
 
 [build-dependencies]
 build-data = "*"
