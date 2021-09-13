@@ -1,4 +1,4 @@
-// main.rs
+// urllog-generator.rs
 
 use chrono::*;
 use log::*;

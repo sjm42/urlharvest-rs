@@ -1,4 +1,4 @@
-// main.rs
+// irssi-urlharvest.rs
 
 use chrono::*;
 use linemux::MuxedLines;
