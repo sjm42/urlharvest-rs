@@ -7,7 +7,7 @@ use regex::Regex;
 use rusqlite::Connection;
 use serde_derive::Deserialize;
 use serde_json::value::Map;
-use std::error::Error;
+use std::{error::Error, net::SocketAddr};
 use structopt::StructOpt;
 use warp::Filter;
 
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .body(index_html.clone())
     });
 
-    let server_addr = opts.addr;
+    let server_addr: SocketAddr = opts.listen.parse()?;
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
