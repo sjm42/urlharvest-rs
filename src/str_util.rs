@@ -19,29 +19,34 @@ pub fn ts_y_fmt(ts: i64) -> String {
         .to_string()
 }
 
-pub fn esc_ltgt(input: String) -> String {
+pub fn esc_ltgt<S: AsRef<str>>(input: S) -> String {
     input
+        .as_ref()
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
 }
 
-pub fn esc_quot(input: String) -> String {
-    input.replace("\"", "&quot;")
+pub fn esc_quot<S: AsRef<str>>(input: S) -> String {
+    input.as_ref().replace("\"", "&quot;")
 }
 
-pub fn sort_dedup_br(input: String) -> String {
-    let mut svec = input.split_whitespace().collect::<Vec<&str>>();
+pub fn sort_dedup_br<S: AsRef<str>>(input: S) -> String {
+    let mut svec = input.as_ref().split_whitespace().collect::<Vec<&str>>();
     #[allow(clippy::stable_sort_primitive)]
     svec.sort();
     svec.dedup();
     svec.join("<br>")
 }
 
-pub fn sql_srch(input: &str) -> String {
+pub fn sql_srch<S: AsRef<str>>(input: S) -> String {
     format!(
         "%{}%",
-        input.to_lowercase().replace("*", "%").replace("?", "_")
+        input
+            .as_ref()
+            .to_lowercase()
+            .replace("*", "%")
+            .replace("?", "_")
     )
 }
 // EOF
