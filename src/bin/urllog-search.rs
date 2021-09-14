@@ -1,6 +1,5 @@
 // urllog-search.rs
 
-use chrono::*;
 use handlebars::{to_json, Handlebars};
 use log::*;
 use regex::Regex;
@@ -13,10 +12,6 @@ use warp::Filter;
 
 use urlharvest::*;
 
-// A week in seconds
-const SHORT_TS_FMT: &str = "%b %d %H:%M";
-const SHORT_TS_YEAR_FMT: &str = "%Y %b %d %H:%M";
-
 const INDEX_PATH: &str = "$HOME/urllog/templates2/search.html.hbs";
 const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
@@ -24,9 +19,6 @@ const REQ_PATH_SEARCH: &str = "search";
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
 const TEXT_HTML: &str = "text/html; charset=utf-8";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
-
-#[derive(Debug, Clone, StructOpt)]
-pub struct GlobalOptions {}
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParam {
@@ -42,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     opts.finish()?;
     start_pgm(&opts.c, "urllog search server");
     {
-        // We drop "db" immediately, just init the database if necessary
+        // Just init the database if necessary,
         // and then drop the connection.
         let _db = start_db(&opts.c)?;
     }
@@ -73,12 +65,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let index_html = hb_reg.render(INDEX_NAME, &tpl_data)?;
 
     // GET / -> index html
-    let req_index = warp::get().and(warp::path::end()).map(move || {
-        warp::http::Response::builder()
-            .header("cache-control", "no-store")
-            .header("content-type", TEXT_HTML)
-            .body(index_html.clone())
-    });
+    let req_index = warp::get()
+        .and(warp::path::end())
+        .map(move || my_response(TEXT_HTML, index_html.clone()));
 
     let server_addr: SocketAddr = opts.listen.parse()?;
     let req_search = warp::get()
@@ -91,20 +80,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 || !re_srch.is_match(&s.url)
                 || !re_srch.is_match(&s.title)
             {
-                return warp::http::Response::builder()
-                    .header("cache-control", "no-store")
-                    .header("content-type", TEXT_PLAIN)
-                    .body("*** Illegal characters in query ***\n".into());
+                return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n".into());
             }
             match search(&opts.c.db_file, &sql_search, &s) {
-                Ok(result) => warp::http::Response::builder()
-                    .header("cache-control", "no-store")
-                    .header("content-type", TEXT_HTML)
-                    .body(result),
-                Err(e) => warp::http::Response::builder()
-                    .header("cache-control", "no-store")
-                    .header("content-type", TEXT_PLAIN)
-                    .body(format!("Query error: {:?}", e)),
+                Ok(result) => my_response(TEXT_HTML, result),
+                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {:?}", e)),
             }
         });
 
@@ -113,20 +93,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn my_response(
+    resp_type: &str,
+    resp_body: String,
+) -> Result<warp::http::Response<String>, warp::http::Error> {
+    warp::http::Response::builder()
+        .header("cache-control", "no-store")
+        .header("content-type", resp_type)
+        .body(resp_body)
+}
+
 fn search(db: &str, sql: &str, srch: &SearchParam) -> Result<String, Box<dyn Error>> {
     info!("search({:?})", srch);
-    let chan = format!("%{}%", srch.chan.to_lowercase())
-        .replace("*", "%")
-        .replace("?", "_");
-    let nick = format!("%{}%", srch.nick.to_lowercase())
-        .replace("*", "%")
-        .replace("?", "_");
-    let url = format!("%{}%", srch.url.to_lowercase())
-        .replace("*", "%")
-        .replace("?", "_");
-    let title = format!("%{}%", srch.title.to_lowercase())
-        .replace("*", "%")
-        .replace("?", "_");
+    let chan = sql_srch(&srch.chan);
+    let nick = sql_srch(&srch.nick);
+    let url = sql_srch(&srch.url);
+    let title = sql_srch(&srch.title);
     info!("Search {} {} {} {}", chan, nick, url, title);
 
     let mut html = r#"<table>
@@ -146,48 +128,21 @@ fn search(db: &str, sql: &str, srch: &SearchParam) -> Result<String, Box<dyn Err
         let mut rows = st_s.query(&[&chan, &nick, &url, &title])?;
         while let Some(row) = rows.next()? {
             let id = row.get::<usize, i64>(0)?;
-            let first_seen_i: i64 = row.get(1)?;
-            let first_seen_str = Local
-                .from_utc_datetime(&NaiveDateTime::from_timestamp(first_seen_i, 0))
-                .format(SHORT_TS_YEAR_FMT)
-                .to_string();
-            let last_seen_i: i64 = row.get(2)?;
-            let last_seen_str = Local
-                .from_utc_datetime(&NaiveDateTime::from_timestamp(last_seen_i, 0))
-                .format(SHORT_TS_FMT)
-                .to_string();
+            let first_seen = ts_y_fmt(row.get::<usize, i64>(1)?);
+            let last_seen = ts_fmt(row.get::<usize, i64>(2)?);
             let num_seen = row.get::<usize, u64>(3)?;
-            // channels and nicks returned from db in arbitrary order separated by whitespace so we sort them
-            let db_ch = row
-                .get::<usize, String>(4)?
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-            let mut ch = db_ch.split_whitespace().collect::<Vec<&str>>();
-            #[allow(clippy::stable_sort_primitive)]
-            ch.sort();
-            ch.dedup();
-            let chans = ch.join("<br>");
-            let db_ni = row
-                .get::<usize, String>(5)?
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-            let mut ni = db_ni.split_whitespace().collect::<Vec<&str>>();
-            #[allow(clippy::stable_sort_primitive)]
-            ni.sort();
-            ni.dedup();
-            let nicks = ni.join("<br>");
-            let url = row.get::<usize, String>(6)?.replace("\"", "&quot;");
-            let title = row
-                .get::<usize, String>(7)?
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
+            let chans = sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?));
+            let nicks = sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?));
+            let url = esc_quot(row.get::<usize, String>(6)?);
+            let title = esc_ltgt(row.get::<usize, String>(7)?);
+
             html.push_str(&format!(
                 "<td>{id}</td><td>{first}</td><td>{last}</td><td>{num}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
                 id = id,
-                first = first_seen_str,
-                last = last_seen_str,
+                first = first_seen,
+                last = last_seen,
                 num = num_seen,
                 chans = chans,
                 nicks = nicks,

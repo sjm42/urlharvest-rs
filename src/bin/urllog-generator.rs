@@ -12,9 +12,8 @@ use urlharvest::*;
 const URL_EXPIRE: i64 = 7 * 24 * 3600;
 const VEC_SZ: usize = 1024;
 const TPL_SUFFIX: &str = ".tera";
+
 const TS_FMT: &str = "%Y-%m-%d %H:%M:%S";
-const SHORT_TS_FMT: &str = "%b %d %H:%M";
-const SHORT_TS_YEAR_FMT: &str = "%Y %b %d %H:%M";
 
 /*
 Creating global Tera template state could be done like this:
@@ -126,38 +125,12 @@ fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Erro
             let mut rows = st_url.query([ts_limit])?;
             while let Some(row) = rows.next()? {
                 arr_id.push(row.get::<usize, i64>(0)?);
-
-                let first_seen_i: i64 = row.get(1)?;
-                let first_seen_str = Local
-                    .from_utc_datetime(&NaiveDateTime::from_timestamp(first_seen_i, 0))
-                    .format(SHORT_TS_YEAR_FMT)
-                    .to_string();
-                arr_first_seen.push(first_seen_str);
-
-                let last_seen_i: i64 = row.get(2)?;
-                let last_seen_str = Local
-                    .from_utc_datetime(&NaiveDateTime::from_timestamp(last_seen_i, 0))
-                    .format(SHORT_TS_FMT)
-                    .to_string();
-                arr_last_seen.push(last_seen_str);
-
+                arr_first_seen.push(ts_y_fmt(row.get::<usize, i64>(1)?));
+                arr_last_seen.push(ts_fmt(row.get::<usize, i64>(2)?));
                 arr_num_seen.push(row.get::<usize, i64>(3)?);
-
-                let ch = row
-                    .get::<usize, String>(4)?
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;");
-                arr_channel.push(ch);
-
-                let url = row.get::<usize, String>(5)?.replace("\"", "&quot;");
-                arr_url.push(url);
-
-                let title = row
-                    .get::<usize, String>(6)?
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;");
-                arr_title.push(title);
-
+                arr_channel.push(esc_ltgt(row.get::<usize, String>(4)?));
+                arr_url.push(esc_quot(row.get::<usize, String>(5)?));
+                arr_title.push(esc_ltgt(row.get::<usize, String>(6)?));
                 i_row += 1;
             }
         }
@@ -187,52 +160,13 @@ fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Erro
             let mut uniq_rows = st_uniq.query([ts_limit])?;
             while let Some(row) = uniq_rows.next()? {
                 uniq_id.push(row.get::<usize, i64>(0)?);
-
-                let first_seen_i: i64 = row.get(1)?;
-                let first_seen_str = Local
-                    .from_utc_datetime(&NaiveDateTime::from_timestamp(first_seen_i, 0))
-                    .format(SHORT_TS_YEAR_FMT)
-                    .to_string();
-                uniq_first_seen.push(first_seen_str);
-
-                let last_seen_i: i64 = row.get(2)?;
-                let last_seen_str = Local
-                    .from_utc_datetime(&NaiveDateTime::from_timestamp(last_seen_i, 0))
-                    .format(SHORT_TS_FMT)
-                    .to_string();
-                uniq_last_seen.push(last_seen_str);
-
+                uniq_first_seen.push(ts_y_fmt(row.get::<usize, i64>(1)?));
+                uniq_last_seen.push(ts_fmt(row.get::<usize, i64>(2)?));
                 uniq_num_seen.push(row.get::<usize, u64>(3)?);
-
-                // channels and nicks returned from db in arbitrary order separated by whitespace so we sort them
-                let db_ch = row
-                    .get::<usize, String>(4)?
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;");
-                let mut ch = db_ch.split_whitespace().collect::<Vec<&str>>();
-                #[allow(clippy::stable_sort_primitive)]
-                ch.sort();
-                ch.dedup();
-                uniq_channel.push(ch.join("<br>"));
-
-                let db_ni = row
-                    .get::<usize, String>(5)?
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;");
-                let mut ni = db_ni.split_whitespace().collect::<Vec<&str>>();
-                #[allow(clippy::stable_sort_primitive)]
-                ni.sort();
-                ni.dedup();
-                uniq_nick.push(ni.join("<br>"));
-
-                let url = row.get::<usize, String>(6)?.replace("\"", "&quot;");
-                uniq_url.push(url);
-
-                let title = row
-                    .get::<usize, String>(7)?
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;");
-                uniq_title.push(title);
+                uniq_channel.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?)));
+                uniq_nick.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?)));
+                uniq_url.push(esc_quot(row.get::<usize, String>(6)?));
+                uniq_title.push(esc_ltgt(row.get::<usize, String>(7)?));
                 i_uniq_row += 1;
             }
         }
