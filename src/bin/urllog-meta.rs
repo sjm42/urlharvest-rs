@@ -78,7 +78,7 @@ pub fn process_backlog(db: &DbCtx) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
-    info!("Starting live processing...");
+    info!("Starting live processing");
     let sql_nometa = format!(
         "select url.id, url.url \
         from {table_url} url \
@@ -104,7 +104,7 @@ pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
         latest_ts = db_ts;
 
         // Ha! There IS something new in db.
-        info!("New stuff, waking up!");
+        info!("Waking up");
         {
             let mut ids = Vec::with_capacity(50);
             let mut urls = Vec::with_capacity(50);
@@ -122,7 +122,7 @@ pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        info!("Some metadata updated, waiting for new stuff...");
+        info!("Waiting for new stuff...");
     }
 }
 
