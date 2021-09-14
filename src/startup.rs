@@ -100,12 +100,11 @@ pub struct OptsSearch {
     pub c: OptsCommon,
     #[structopt(short, long, default_value = "127.0.0.1:8080")]
     pub listen: String,
-    pub addr: SocketAddr,
 }
 impl OptsSearch {
     pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
         self.c.finish()?;
-        self.addr = self.listen.parse()?;
+        let _ = self.listen.parse::<SocketAddr>()?;
         Ok(())
     }
 }
