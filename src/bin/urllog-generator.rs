@@ -2,10 +2,9 @@
 
 use chrono::*;
 use log::*;
-use rusqlite::Connection;
-use std::{env, error::Error, fs, thread, time};
+use std::{error::Error, fs, thread, time};
 use structopt::StructOpt;
-use tera::{Context, Tera};
+use tera::Tera;
 
 use urlharvest::*;
 
@@ -16,24 +15,6 @@ const TPL_SUFFIX: &str = ".tera";
 const TS_FMT: &str = "%Y-%m-%d %H:%M:%S";
 const SHORT_TS_FMT: &str = "%b %d %H:%M";
 const SHORT_TS_YEAR_FMT: &str = "%Y %b %d %H:%M";
-
-#[derive(Debug, Clone, StructOpt)]
-pub struct GlobalOptions {
-    #[structopt(short, long)]
-    pub debug: bool,
-    #[structopt(short, long)]
-    pub trace: bool,
-    #[structopt(long, default_value = "$HOME/urllog/data/urllog2.db")]
-    pub db_file: String,
-    #[structopt(long, default_value = "urllog2")]
-    pub table_url: String,
-    #[structopt(long, default_value = "urlmeta")]
-    pub table_meta: String,
-    #[structopt(long, default_value = "$HOME/urllog/templates2")]
-    pub template_dir: String,
-    #[structopt(long, default_value = "$HOME/urllog/html2")]
-    pub html_dir: String,
-}
 
 /*
 Creating global Tera template state could be done like this:
@@ -51,7 +32,59 @@ static TERA: SyncLazy<RwLock<Tera>> = SyncLazy::new(|| {
 */
 */
 
-fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<Context, Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut opts = OptsGenerator::from_args();
+    opts.finish()?;
+    start_pgm(&opts.c, "urllog generator");
+    let db = start_db(&opts.c)?;
+
+    let tera_dir = &opts.template_dir;
+    info!("Template directory: {}", tera_dir);
+    let tera = match Tera::new(&format!("{}/*.tera", tera_dir)) {
+        Ok(t) => t,
+        Err(e) => {
+            return Err(format!("Tera template parsing error: {}", e).into());
+        }
+    };
+    if tera.get_template_names().count() < 1 {
+        error!("No templates found. Exit.");
+        return Err("Templates not found".into());
+    }
+    info!(
+        "Found templates: [{}]",
+        tera.get_template_names().collect::<Vec<_>>().join(", ")
+    );
+
+    let mut latest_ts: i64 = 0;
+    loop {
+        thread::sleep(time::Duration::new(10, 0));
+        let db_ts = db_last_change(&db)?;
+        if db_ts <= latest_ts {
+            trace!("Nothing new in DB.");
+            continue;
+        }
+        latest_ts = db_ts;
+
+        let ts_limit = db_ts - URL_EXPIRE;
+        let ts_limit_str = Local
+            .from_utc_datetime(&NaiveDateTime::from_timestamp(ts_limit, 0))
+            .format(TS_FMT);
+
+        info!("Generating URL logs starting from {}", &ts_limit_str);
+        let ctx = populate_ctx(&db, ts_limit)?;
+        for template in tera.get_template_names() {
+            let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
+            let filename_out = format!("{}/{}", &opts.html_dir, &template[0..cut_idx]);
+            let filename_tmp = format!("{}.{}.tmp", filename_out, std::process::id());
+            info!("Generating {} from {}", filename_out, template);
+            let template_output = tera.render(template, &ctx)?;
+            fs::write(&filename_tmp, &template_output)?;
+            fs::rename(&filename_tmp, &filename_out)?;
+        }
+    }
+}
+
+fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Error>> {
     let sql_url = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
           channel, url, {table_meta}.title \
@@ -215,88 +248,5 @@ fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<Context, Box<dyn Error>> {
         ctx.insert("uniq_title", &uniq_title);
     }
     Ok(ctx)
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
-    let home = env::var("HOME")?;
-    let mut opt = GlobalOptions::from_args();
-    opt.db_file = opt.db_file.replace("$HOME", &home);
-    opt.template_dir = opt.template_dir.replace("$HOME", &home);
-    opt.html_dir = opt.html_dir.replace("$HOME", &home);
-    let loglevel = if opt.trace {
-        LevelFilter::Trace
-    } else if opt.debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
-
-    env_logger::Builder::new()
-        .filter_level(loglevel)
-        .format_timestamp_secs()
-        .init();
-    info!("Starting up urllog generator...");
-    debug!("Git branch: {}", env!("GIT_BRANCH"));
-    debug!("Git commit: {}", env!("GIT_COMMIT"));
-    debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
-    debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-    debug!("Global config: {:?}", &opt);
-
-    let tera_dir = &opt.template_dir;
-    info!("Template directory: {}", tera_dir);
-    let tera = match Tera::new(&format!("{}/*.tera", tera_dir)) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(format!("Tera template parsing error: {}", e).into());
-        }
-    };
-
-    if tera.get_template_names().count() < 1 {
-        error!("No templates found. Exit.");
-        return Err("Templates not found".into());
-    }
-    info!(
-        "Found templates: [{}]",
-        tera.get_template_names().collect::<Vec<_>>().join(", ")
-    );
-
-    let dbc = &Connection::open(&opt.db_file)?;
-    let table_url = &opt.table_url;
-    let table_meta = &opt.table_meta;
-    let db = DbCtx {
-        dbc,
-        table_url,
-        table_meta,
-        update_change: false,
-    };
-    db_init(&db)?;
-
-    let mut latest_ts: i64 = 0;
-    loop {
-        thread::sleep(time::Duration::new(10, 0));
-        let db_ts = db_last_change(&db)?;
-        if db_ts <= latest_ts {
-            trace!("Nothing new in DB.");
-            continue;
-        }
-        latest_ts = db_ts;
-
-        let ts_limit = db_ts - URL_EXPIRE;
-        let ts_limit_str = Local
-            .from_utc_datetime(&NaiveDateTime::from_timestamp(ts_limit, 0))
-            .format(TS_FMT);
-
-        info!("Generating URL logs starting from {}", &ts_limit_str);
-        let ctx = populate_ctx(&db, ts_limit)?;
-        for template in tera.get_template_names() {
-            let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
-            let filename_out = format!("{}/{}", &opt.html_dir, &template[0..cut_idx]);
-            let filename_tmp = format!("{}.{}.tmp", filename_out, std::process::id());
-            info!("Generating {} from {}", filename_out, template);
-            let template_output = tera.render(template, &ctx)?;
-            fs::write(&filename_tmp, &template_output)?;
-            fs::rename(&filename_tmp, &filename_out)?;
-        }
-    }
 }
 // EOF

@@ -9,8 +9,8 @@ use std::{thread, time};
 const RETRY_CNT: usize = 5;
 const RETRY_SLEEP: u64 = 1;
 
-pub struct DbCtx<'c, 's> {
-    pub dbc: &'c Connection,
+pub struct DbCtx<'s> {
+    pub dbc: Connection,
     pub table_url: &'s str,
     pub table_meta: &'s str,
     pub update_change: bool,
@@ -40,7 +40,7 @@ fn table_exist(dbc: &Connection, table: &str) -> Result<bool, Box<dyn Error>> {
 }
 
 pub fn db_init(db: &DbCtx) -> Result<(), Box<dyn Error>> {
-    if !table_exist(db.dbc, db.table_url)? {
+    if !table_exist(&db.dbc, db.table_url)? {
         info!("Creating table {}", db.table_url);
         let sql = format!(
             "begin; \
@@ -62,7 +62,7 @@ pub fn db_init(db: &DbCtx) -> Result<(), Box<dyn Error>> {
         debug!("SQL:\n{}", &sql);
         db.dbc.execute_batch(&sql)?;
     }
-    if !table_exist(db.dbc, db.table_meta)? {
+    if !table_exist(&db.dbc, db.table_meta)? {
         info!("Creating table {}", db.table_meta);
         let sql = format!(
             "begin; \

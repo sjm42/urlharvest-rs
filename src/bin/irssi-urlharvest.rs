@@ -4,44 +4,16 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use rusqlite::Connection;
+use std::ffi::*;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, error::Error, time::Instant};
-use std::{env, ffi::*};
 use structopt::StructOpt;
 
 use urlharvest::*;
 
 const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
-
-#[derive(Debug, Clone, StructOpt)]
-pub struct GlobalOptions {
-    #[structopt(short, long)]
-    pub debug: bool,
-    #[structopt(short, long)]
-    pub trace: bool,
-    #[structopt(short, long)]
-    pub read_history: bool,
-    #[structopt(long, default_value = "$HOME/irclogs/ircnet")]
-    pub irc_log_dir: String,
-    #[structopt(long, default_value = "$HOME/urllog/data/urllog2.db")]
-    pub db_file: String,
-    #[structopt(long, default_value = "urllog2")]
-    pub table_url: String,
-    #[structopt(long, default_value = "urlmeta")]
-    pub table_meta: String,
-    #[structopt(long, default_value = r#"^(#\S*)\.log$"#)]
-    pub re_log: String,
-    #[structopt(long, default_value = r#"^[:\d]+\s+[<\*][%@\~\&\+\s]*([^>\s]+)>?\s+"#)]
-    pub re_nick: String,
-    #[structopt(
-        long,
-        default_value = r#"(https?://[\w/',":;!%@=\-\.\~\?\#\[\]\{\}\$\&\(\)\*\+]+[^\s'"\)\]\}])"#
-    )]
-    pub re_url: String,
-}
 
 struct IrcCtx<'a> {
     re_nick: &'a Regex,
@@ -51,72 +23,22 @@ struct IrcCtx<'a> {
     msg: &'a str,
 }
 
-fn handle_ircmsg(db: &DbCtx, ctx: &IrcCtx) -> Result<(), Box<dyn Error>> {
-    let nick = match ctx.re_nick.captures(ctx.msg) {
-        Some(nick_match) => nick_match[1].to_owned(),
-        None => "UNKNOWN".into(),
-    };
-    trace!("{} {}", ctx.chan, ctx.msg);
-
-    for url_cap in ctx.re_url.captures_iter(ctx.msg) {
-        let url = &url_cap[1];
-        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
-        let u = UrlCtx {
-            ts: ctx.ts,
-            chan: ctx.chan,
-            nick: &nick,
-            url,
-        };
-        db_add_url(db, &u)?;
-    }
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let home = env::var("HOME")?;
-    let mut opt = GlobalOptions::from_args();
-    opt.irc_log_dir = opt.irc_log_dir.replace("$HOME", &home);
-    opt.db_file = opt.db_file.replace("$HOME", &home);
-    let loglevel = if opt.trace {
-        LevelFilter::Trace
-    } else if opt.debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
+    let mut opts = OptsHarvest::from_args();
+    opts.finish()?;
+    start_pgm(&opts.c, "URL harvester");
+    let mut db = start_db(&opts.c)?;
 
-    env_logger::Builder::new()
-        .filter_level(loglevel)
-        .format_timestamp_secs()
-        .init();
-    info!("Starting up URL harvester...");
-    debug!("Git branch: {}", env!("GIT_BRANCH"));
-    debug!("Git commit: {}", env!("GIT_COMMIT"));
-    debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
-    debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-    debug!("Global config: {:?}", opt);
+    let re_nick = &Regex::new(&opts.re_nick)?;
+    let re_url = &Regex::new(&opts.re_url)?;
 
-    let dbc = &Connection::open(&opt.db_file)?;
-    let table_url = &opt.table_url;
-    let table_meta = &opt.table_meta;
-    let db = DbCtx {
-        dbc,
-        table_url,
-        table_meta,
-        update_change: false,
-    };
-    db_init(&db)?;
-
-    let re_nick = &Regex::new(&opt.re_nick)?;
-    let re_url = &Regex::new(&opt.re_url)?;
-
-    let re_log = Regex::new(&opt.re_log)?;
+    let re_log = Regex::new(&opts.re_log)?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
     let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
 
-    debug!("Scanning dir {}", &opt.irc_log_dir);
-    for log_f in fs::read_dir(&opt.irc_log_dir)? {
+    debug!("Scanning dir {}", &opts.irc_log_dir);
+    for log_f in fs::read_dir(&opts.irc_log_dir)? {
         let log_f = log_f?;
         let log_fn = log_f.file_name().to_string_lossy().into_owned();
         if let Some(chan_match) = re_log.captures(&log_fn) {
@@ -131,9 +53,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut lmux = MuxedLines::new()?;
     let chan_unk = &"<UNKNOWN>".to_string();
-    if opt.read_history {
+    if opts.read_history {
         let mut tx_i: usize = 0;
-        dbc.execute_batch("begin")?;
+        db.dbc.execute_batch("begin")?;
 
         // Save the start time to measure elapsed
         let start_ts = Instant::now();
@@ -155,8 +77,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let msg = &line?;
                 tx_i += 1;
                 if tx_i >= TX_SZ {
-                    dbc.execute_batch("commit")?;
-                    dbc.execute_batch("begin")?;
+                    db.dbc.execute_batch("commit")?;
+                    db.dbc.execute_batch("begin")?;
                     tx_i = 0;
                 }
                 if let Some(re_match) = re_hourmin.captures(msg) {
@@ -206,7 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
         }
-        dbc.execute_batch("commit")?;
+        db.dbc.execute_batch("commit")?;
         info!(
             "History read completed in {:.3} s",
             start_ts.elapsed().as_millis() as f64 / 1000.0
@@ -232,11 +154,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
             chan,
             msg,
         };
-        let db_live = DbCtx {
-            update_change: true,
-            ..db
+        db.update_change = true;
+        handle_ircmsg(&db, &ctx)?;
+    }
+    Ok(())
+}
+
+fn handle_ircmsg(db: &DbCtx, ctx: &IrcCtx) -> Result<(), Box<dyn Error>> {
+    let nick = match ctx.re_nick.captures(ctx.msg) {
+        Some(nick_match) => nick_match[1].to_owned(),
+        None => "UNKNOWN".into(),
+    };
+    trace!("{} {}", ctx.chan, ctx.msg);
+
+    for url_cap in ctx.re_url.captures_iter(ctx.msg) {
+        let url = &url_cap[1];
+        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
+        let u = UrlCtx {
+            ts: ctx.ts,
+            chan: ctx.chan,
+            nick: &nick,
+            url,
         };
-        handle_ircmsg(&db_live, &ctx)?;
+        db_add_url(db, &u)?;
     }
     Ok(())
 }

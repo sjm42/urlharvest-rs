@@ -7,7 +7,7 @@ use regex::Regex;
 use rusqlite::Connection;
 use serde_derive::Deserialize;
 use serde_json::value::Map;
-use std::{env, error::Error, net::SocketAddr};
+use std::error::Error;
 use structopt::StructOpt;
 use warp::Filter;
 
@@ -26,20 +26,7 @@ const TEXT_HTML: &str = "text/html; charset=utf-8";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
 
 #[derive(Debug, Clone, StructOpt)]
-pub struct GlobalOptions {
-    #[structopt(short, long)]
-    pub debug: bool,
-    #[structopt(short, long)]
-    pub trace: bool,
-    #[structopt(long, default_value = "$HOME/urllog/data/urllog2.db")]
-    pub db_file: String,
-    #[structopt(long, default_value = "urllog2")]
-    pub table_url: String,
-    #[structopt(long, default_value = "urlmeta")]
-    pub table_meta: String,
-    #[structopt(short, long, default_value = "127.0.0.1:8080")]
-    pub listen: String,
-}
+pub struct GlobalOptions {}
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParam {
@@ -51,41 +38,13 @@ pub struct SearchParam {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let home = env::var("HOME")?;
-    let mut opt = GlobalOptions::from_args();
-    opt.db_file = opt.db_file.replace("$HOME", &home);
-    let loglevel = if opt.trace {
-        LevelFilter::Trace
-    } else if opt.debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
-
-    env_logger::Builder::new()
-        .filter_level(loglevel)
-        .format_timestamp_secs()
-        .init();
-    info!("Starting up urllog search server...");
-    debug!("Git branch: {}", env!("GIT_BRANCH"));
-    debug!("Git commit: {}", env!("GIT_COMMIT"));
-    debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
-    debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-    debug!("Global config: {:?}", &opt);
-
-    let listen = opt.listen.clone();
-    let table_url = &opt.table_url;
-    let table_meta = &opt.table_meta;
+    let mut opts = OptsSearch::from_args();
+    opts.finish()?;
+    start_pgm(&opts.c, "urllog search server");
     {
-        let dbc = Connection::open(&opt.db_file)?;
-        let db = DbCtx {
-            dbc: &dbc,
-            table_url,
-            table_meta,
-            update_change: true,
-        };
-        db_init(&db)?;
-        let _ = dbc.close();
+        // We drop "db" immediately, just init the database if necessary
+        // and then drop the connection.
+        let _db = start_db(&opts.c)?;
     }
     let sql_search = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
@@ -99,13 +58,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         group by url \
         order by max(seen) desc \
         limit 100",
-        table_url = table_url,
-        table_meta = table_meta,
+        table_url = opts.c.table_url,
+        table_meta = opts.c.table_meta,
     );
 
     let re_srch = Regex::new(RE_SEARCH)?;
     let mut index_path = INDEX_PATH.to_string();
-    index_path = index_path.replace("$HOME", &home);
+    expand_home(&mut index_path)?;
 
     let mut hb_reg = Handlebars::new();
     hb_reg.register_template_file(INDEX_NAME, &index_path)?;
@@ -121,6 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .body(index_html.clone())
     });
 
+    let server_addr = opts.addr;
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
@@ -136,7 +96,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .header("content-type", TEXT_PLAIN)
                     .body("*** Illegal characters in query ***\n".into());
             }
-            match search(&opt.db_file, &sql_search, &s) {
+            match search(&opts.c.db_file, &sql_search, &s) {
                 Ok(result) => warp::http::Response::builder()
                     .header("cache-control", "no-store")
                     .header("content-type", TEXT_HTML)
@@ -149,8 +109,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         });
 
     let req_routes = req_search.or(req_index);
-    let addr: SocketAddr = listen.parse()?;
-    warp::serve(req_routes).run(addr).await;
+    warp::serve(req_routes).run(server_addr).await;
     Ok(())
 }
 
