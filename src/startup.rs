@@ -19,12 +19,10 @@ pub struct OptsCommon {
     pub table_url: String,
     #[structopt(long, default_value = "urlmeta")]
     pub table_meta: String,
-    pub loglvl: LevelFilter,
 }
 impl OptsCommon {
     pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
         expand_home(&mut self.db_file)?;
-        self.loglvl = self.get_loglevel();
         Ok(())
     }
     fn get_loglevel(&self) -> LevelFilter {
@@ -120,7 +118,7 @@ pub fn expand_home(pathname: &mut String) -> Result<(), Box<dyn Error>> {
 
 pub fn start_pgm(c: &OptsCommon, desc: &str) {
     env_logger::Builder::new()
-        .filter_level(c.loglvl)
+        .filter_level(c.get_loglevel())
         .format_timestamp_secs()
         .init();
     info!("Starting up {}...", desc);
