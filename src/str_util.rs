@@ -2,21 +2,27 @@
 
 use chrono::*;
 
-const SHORT_TS_FMT: &str = "%b %d %H:%M";
-const SHORT_TS_YEAR_FMT: &str = "%Y %b %d %H:%M";
+const TS_FMT_LONG: &str = "%Y-%m-%d %H:%M:%S";
+const TS_FMT_SHORT: &str = "%b %d %H:%M";
+const TS_FMT_YEAR_SHORT: &str = "%Y %b %d %H:%M";
 
-pub fn ts_fmt(ts: i64) -> String {
+pub fn ts_fmt<S: AsRef<str>>(fmt: S, ts: i64) -> String {
     Local
         .from_utc_datetime(&NaiveDateTime::from_timestamp(ts, 0))
-        .format(SHORT_TS_FMT)
+        .format(fmt.as_ref())
         .to_string()
 }
 
-pub fn ts_y_fmt(ts: i64) -> String {
-    Local
-        .from_utc_datetime(&NaiveDateTime::from_timestamp(ts, 0))
-        .format(SHORT_TS_YEAR_FMT)
-        .to_string()
+pub fn ts_long(ts: i64) -> String {
+    ts_fmt(TS_FMT_LONG, ts)
+}
+
+pub fn ts_short(ts: i64) -> String {
+    ts_fmt(TS_FMT_SHORT, ts)
+}
+
+pub fn ts_y_short(ts: i64) -> String {
+    ts_fmt(TS_FMT_YEAR_SHORT, ts)
 }
 
 pub fn esc_ltgt<S: AsRef<str>>(input: S) -> String {

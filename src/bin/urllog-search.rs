@@ -130,8 +130,8 @@ fn search(db: &str, sql: &str, srch: &SearchParam) -> Result<String, Box<dyn Err
         let mut rows = st_s.query(&[&chan, &nick, &url, &title])?;
         while let Some(row) = rows.next()? {
             let id = row.get::<usize, i64>(0)?;
-            let first_seen = ts_y_fmt(row.get::<usize, i64>(1)?);
-            let last_seen = ts_fmt(row.get::<usize, i64>(2)?);
+            let first_seen = ts_y_short(row.get::<usize, i64>(1)?);
+            let last_seen = ts_short(row.get::<usize, i64>(2)?);
             let num_seen = row.get::<usize, u64>(3)?;
             let chans = sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?));
             let nicks = sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?));

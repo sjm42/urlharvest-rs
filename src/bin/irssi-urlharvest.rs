@@ -14,6 +14,8 @@ use urlharvest::*;
 
 const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
+const CHAN_UNK: &str = "UNKNOWN";
+const NICK_UNK: &str = "UNKNOWN";
 
 struct IrcCtx<'a, S1, S2>
 where
@@ -34,37 +36,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
     start_pgm(&opts.c, "URL harvester");
     let mut db = start_db(&opts.c)?;
 
-    let re_nick = &Regex::new(&opts.re_nick)?;
-    let re_url = &Regex::new(&opts.re_url)?;
-
-    let re_log = Regex::new(&opts.re_log)?;
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
     let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
 
     debug!("Scanning dir {}", &opts.irc_log_dir);
-    for log_f in fs::read_dir(&opts.irc_log_dir)? {
-        let log_f = log_f?;
-        let log_fn = log_f.file_name().to_string_lossy().into_owned();
-        if let Some(chan_match) = re_log.captures(&log_fn) {
-            let irc_chan = &chan_match[1];
-            let log_nopath = log_f.path().file_name().unwrap().to_os_string();
+    let re_log = Regex::new(&opts.re_log)?;
+    for log_fd in fs::read_dir(&opts.irc_log_dir)? {
+        let log_f = log_fd?;
+        if let Some(re_match) = re_log.captures(log_f.file_name().to_string_lossy().as_ref()) {
+            chans.insert(
+                log_f.path().file_name().unwrap().to_os_string(),
+                re_match[1].to_owned(),
+            );
             log_files.push(log_f);
-            chans.insert(log_nopath, irc_chan.to_string());
         }
     }
     debug!("My logfiles: {:?}", log_files);
     debug!("My chans: {:?}", chans);
 
+    let re_nick = &Regex::new(&opts.re_nick)?;
+    let re_url = &Regex::new(&opts.re_url)?;
     let mut lmux = MuxedLines::new()?;
-    let chan_unk = &"<UNKNOWN>".to_string();
+    let chan_unk = CHAN_UNK.to_owned();
     if opts.read_history {
-        let mut tx_i: usize = 0;
-        db.dbc.execute_batch("begin")?;
+        // Seed the database with all the old log lines too
+        info!("Reading history...");
 
         // Save the start time to measure elapsed
         let start_ts = Instant::now();
-        // Seed the database with all the old log lines too
-        info!("Reading history...");
 
         // *** Pre-compile the regexes here for performance!
 
@@ -81,13 +80,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let re_timestamp =
             Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
 
+        let mut tx_i: usize = 0;
+        db.dbc.execute_batch("begin")?;
         for log_f in &log_files {
             let log_nopath = log_f.path().file_name().unwrap().to_os_string();
-            let chan = chans.get(&log_nopath).unwrap_or(chan_unk);
+            let chan = chans.get(&log_nopath).unwrap_or(&chan_unk);
             let reader = BufReader::new(File::open(log_f.path())?);
             let mut current_ts = Local::now();
             for (_index, line) in reader.lines().enumerate() {
-                let msg = &line?;
+                let msg = line?;
                 tx_i += 1;
                 if tx_i >= TX_SZ {
                     db.dbc.execute_batch("commit")?;
@@ -96,15 +97,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Most common case
-                if let Some(new_ts) = detect_hourmin(&re_hourmin, msg, current_ts) {
+                if let Some(new_ts) = detect_hourmin(&re_hourmin, &msg, current_ts) {
                     current_ts = new_ts;
                 }
                 // Second common case
-                else if let Some(new_ts) = detect_daychange(&re_daychange, msg) {
+                else if let Some(new_ts) = detect_daychange(&re_daychange, &msg) {
                     current_ts = new_ts;
                 }
                 // Least common case
-                else if let Some(new_ts) = detect_timestamp(&re_timestamp, msg) {
+                else if let Some(new_ts) = detect_timestamp(&re_timestamp, &msg) {
                     current_ts = new_ts;
                 }
 
@@ -113,7 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     re_url,
                     ts: current_ts.timestamp(),
                     chan,
-                    msg,
+                    msg: &msg,
                 };
                 handle_ircmsg(&db, &ctx)?;
             }
@@ -137,7 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .source()
             .file_name()
             .unwrap_or_else(|| OsStr::new("NONE"));
-        let chan = chans.get(filename).unwrap_or(chan_unk);
+        let chan = chans.get(filename).unwrap_or(&chan_unk);
         let msg = msg_line.line();
         let ctx = IrcCtx {
             re_nick,
@@ -210,9 +211,9 @@ where
     S2: AsRef<str> + ?Sized,
 {
     // Do we have nick in the msg?
-    let nick = match ctx.re_nick.captures(ctx.msg.as_ref()) {
+    let nick = &match ctx.re_nick.captures(ctx.msg.as_ref()) {
         Some(nick_match) => nick_match[1].to_owned(),
-        None => "UNKNOWN".into(),
+        None => NICK_UNK.into(),
     };
     trace!("{} {}", ctx.chan.as_ref(), ctx.msg.as_ref());
 
@@ -222,7 +223,7 @@ where
         let u = UrlCtx {
             ts: ctx.ts,
             chan: ctx.chan.as_ref(),
-            nick: &nick,
+            nick,
             url,
         };
         db_add_url(db, &u)?;

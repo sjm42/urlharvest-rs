@@ -60,7 +60,7 @@ pub fn process_backlog(db: &DbCtx) -> Result<(), Box<dyn Error>> {
             break;
         }
 
-        info!("*** PROCESSING *** at {}", &ts_y_fmt(seen_i));
+        info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
         for i in 0..ids.len() {
             if let Err(e) = update_meta(db, ids[i], &urls[i]) {
                 error!("URL error: {}", e);

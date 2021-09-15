@@ -13,8 +13,6 @@ const URL_EXPIRE: i64 = 7 * 24 * 3600;
 const VEC_SZ: usize = 1024;
 const TPL_SUFFIX: &str = ".tera";
 
-const TS_FMT: &str = "%Y-%m-%d %H:%M:%S";
-
 /*
 Creating global Tera template state could be done like this:
 
@@ -65,11 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         latest_ts = db_ts;
 
         let ts_limit = db_ts - URL_EXPIRE;
-        let ts_limit_str = Local
-            .from_utc_datetime(&NaiveDateTime::from_timestamp(ts_limit, 0))
-            .format(TS_FMT);
-
-        info!("Generating URL logs starting from {}", &ts_limit_str);
+        info!("Generating URL logs starting from {}", ts_long(ts_limit));
         let ctx = generate_ctx(&db, ts_limit)?;
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
@@ -109,7 +103,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Erro
     );
 
     let mut ctx = tera::Context::new();
-    ctx.insert("last_change", &Utc::now().format(TS_FMT).to_string());
+    ctx.insert("last_change", &ts_long(Utc::now().timestamp()));
     {
         let mut arr_id = Vec::with_capacity(VEC_SZ);
         let mut arr_first_seen = Vec::with_capacity(VEC_SZ);
@@ -125,8 +119,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Erro
             let mut rows = st_url.query([ts_limit])?;
             while let Some(row) = rows.next()? {
                 arr_id.push(row.get::<usize, i64>(0)?);
-                arr_first_seen.push(ts_y_fmt(row.get::<usize, i64>(1)?));
-                arr_last_seen.push(ts_fmt(row.get::<usize, i64>(2)?));
+                arr_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
+                arr_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
                 arr_num_seen.push(row.get::<usize, i64>(3)?);
                 arr_channel.push(esc_ltgt(row.get::<usize, String>(4)?));
                 arr_url.push(esc_quot(row.get::<usize, String>(5)?));
@@ -160,8 +154,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Erro
             let mut uniq_rows = st_uniq.query([ts_limit])?;
             while let Some(row) = uniq_rows.next()? {
                 uniq_id.push(row.get::<usize, i64>(0)?);
-                uniq_first_seen.push(ts_y_fmt(row.get::<usize, i64>(1)?));
-                uniq_last_seen.push(ts_fmt(row.get::<usize, i64>(2)?));
+                uniq_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
+                uniq_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
                 uniq_num_seen.push(row.get::<usize, u64>(3)?);
                 uniq_channel.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?)));
                 uniq_nick.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?)));

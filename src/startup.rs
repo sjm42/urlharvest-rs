@@ -111,7 +111,7 @@ impl OptsSearch {
 
 pub fn expand_home(pathname: &mut String) -> Result<(), Box<dyn Error>> {
     let home = env::var("HOME")?;
-    *pathname = pathname.replace("$HOME", &home);
+    *pathname = pathname.as_str().replace("$HOME", &home);
     Ok(())
 }
 
@@ -129,8 +129,8 @@ pub fn start_pgm(c: &OptsCommon, desc: &str) {
 
 pub fn start_db(c: &OptsCommon) -> Result<DbCtx, Box<dyn Error>> {
     let dbc = Connection::open(&c.db_file)?;
-    let table_url = &c.table_url;
-    let table_meta = &c.table_meta;
+    let table_url = c.table_url.as_str();
+    let table_meta = c.table_meta.as_str();
     let db = DbCtx {
         dbc,
         table_url,
