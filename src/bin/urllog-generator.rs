@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .format(TS_FMT);
 
         info!("Generating URL logs starting from {}", &ts_limit_str);
-        let ctx = populate_ctx(&db, ts_limit)?;
+        let ctx = generate_ctx(&db, ts_limit)?;
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
             let filename_out = format!("{}/{}", &opts.html_dir, &template[0..cut_idx]);
@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn populate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Error>> {
+fn generate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Error>> {
     let sql_url = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
           channel, url, {table_meta}.title \

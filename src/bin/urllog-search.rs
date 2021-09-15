@@ -15,10 +15,11 @@ use urlharvest::*;
 const INDEX_PATH: &str = "$HOME/urllog/templates2/search.html.hbs";
 const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
+const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
+const RESULT_MAXSZ: usize = 100;
 
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
 const TEXT_HTML: &str = "text/html; charset=utf-8";
-const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
 
 #[derive(Debug, Deserialize)]
 pub struct SearchParam {
@@ -49,9 +50,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         and lower({table_meta}.title) like ? \
         group by url \
         order by max(seen) desc \
-        limit 100",
+        limit {sz}",
         table_url = opts.c.table_url,
         table_meta = opts.c.table_meta,
+        sz = RESULT_MAXSZ,
     );
 
     let re_srch = Regex::new(RE_SEARCH)?;

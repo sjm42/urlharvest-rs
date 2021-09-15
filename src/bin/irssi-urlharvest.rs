@@ -15,12 +15,16 @@ use urlharvest::*;
 const TX_SZ: usize = 1024;
 const VEC_SZ: usize = 64;
 
-struct IrcCtx<'a> {
+struct IrcCtx<'a, S1, S2>
+where
+    S1: AsRef<str> + ?Sized,
+    S2: AsRef<str> + ?Sized,
+{
     re_nick: &'a Regex,
     re_url: &'a Regex,
     ts: i64,
-    chan: &'a str,
-    msg: &'a str,
+    chan: &'a S1,
+    msg: &'a S2,
 }
 
 #[tokio::main]
@@ -61,12 +65,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let start_ts = Instant::now();
         // Seed the database with all the old log lines too
         info!("Reading history...");
-        // "--- Log opened Sun Aug 08 13:37:42 2021"
-        let re_ts = Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
-        // "--- Day changed Fri Aug 13 2021"
-        let re_daychange = Regex::new(r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#)?;
+
+        // *** Pre-compile the regexes here for performance!
+
+        // Match most message lines, example:
         // "13:37 <@sjm> 1337"
         let re_hourmin = Regex::new(r#"^(\d\d):(\d\d)\s"#)?;
+
+        // Match example line:
+        // "--- Day changed Fri Aug 13 2021"
+        let re_daychange = Regex::new(r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#)?;
+
+        // Match example line:
+        // "--- Log opened Sun Aug 08 13:37:42 2021"
+        let re_timestamp =
+            Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
 
         for log_f in &log_files {
             let log_nopath = log_f.path().file_name().unwrap().to_os_string();
@@ -81,39 +94,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     db.dbc.execute_batch("begin")?;
                     tx_i = 0;
                 }
-                if let Some(re_match) = re_hourmin.captures(msg) {
-                    let hh = &re_match[1];
-                    let mm = &re_match[2];
-                    let s = format!("{}{}00", hh, mm);
-                    if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
-                        current_ts = current_ts.date().and_time(new_localtime).unwrap();
-                    }
-                } else if let Some(re_match) = re_daychange.captures(msg) {
-                    let mon = &re_match[1];
-                    let day = &re_match[2];
-                    let year = &re_match[3];
-                    let s = format!("{}{}{}", year, mon, day);
-                    if let Ok(naive_date) = NaiveDate::parse_from_str(&s, "%Y%b%d") {
-                        let naive_ts = naive_date.and_hms(0, 0, 0);
-                        if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                            trace!("Found daychange {:?}", new_ts);
-                            current_ts = new_ts;
-                        }
-                    }
-                } else if let Some(re_match) = re_ts.captures(msg) {
-                    let mon = &re_match[1];
-                    let day = &re_match[2];
-                    let hh = &re_match[3];
-                    let mm = &re_match[4];
-                    let ss = &re_match[5];
-                    let year = &re_match[6];
-                    let s = format!("{}{}{}-{}{}{}", year, mon, day, hh, mm, ss);
-                    if let Ok(naive_ts) = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S") {
-                        if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                            trace!("Found TS {:?}", new_ts);
-                            current_ts = new_ts;
-                        }
-                    }
+
+                // Most common case
+                if let Some(new_ts) = detect_hourmin(&re_hourmin, msg, current_ts) {
+                    current_ts = new_ts;
+                }
+                // Second common case
+                else if let Some(new_ts) = detect_daychange(&re_daychange, msg) {
+                    current_ts = new_ts;
+                }
+                // Least common case
+                else if let Some(new_ts) = detect_timestamp(&re_timestamp, msg) {
+                    current_ts = new_ts;
                 }
 
                 let ctx = IrcCtx {
@@ -160,19 +152,76 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn handle_ircmsg(db: &DbCtx, ctx: &IrcCtx) -> Result<(), Box<dyn Error>> {
-    let nick = match ctx.re_nick.captures(ctx.msg) {
+fn detect_hourmin<S: AsRef<str>>(
+    re: &Regex,
+    msg: S,
+    current: DateTime<Local>,
+) -> Option<DateTime<Local>> {
+    if let Some(re_match) = re.captures(msg.as_ref()) {
+        let hh = &re_match[1];
+        let mm = &re_match[2];
+        let s = format!("{}{}00", hh, mm);
+        if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
+            return current.date().and_time(new_localtime);
+        }
+    }
+    None
+}
+
+fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
+    if let Some(re_match) = re.captures(msg.as_ref()) {
+        let mon = &re_match[1];
+        let day = &re_match[2];
+        let year = &re_match[3];
+        let s = format!("{}{}{}", year, mon, day);
+        if let Ok(naive_date) = NaiveDate::parse_from_str(&s, "%Y%b%d") {
+            let naive_ts = naive_date.and_hms(0, 0, 0);
+            if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+                trace!("Found daychange {:?}", new_ts);
+                return Some(new_ts);
+            }
+        }
+    }
+    None
+}
+
+fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
+    if let Some(re_match) = re.captures(msg.as_ref()) {
+        let mon = &re_match[1];
+        let day = &re_match[2];
+        let hh = &re_match[3];
+        let mm = &re_match[4];
+        let ss = &re_match[5];
+        let year = &re_match[6];
+        let s = format!("{}{}{}-{}{}{}", year, mon, day, hh, mm, ss);
+        if let Ok(naive_ts) = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S") {
+            if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+                trace!("Found timestamp {:?}", new_ts);
+                return Some(new_ts);
+            }
+        }
+    }
+    None
+}
+
+fn handle_ircmsg<S1, S2>(db: &DbCtx, ctx: &IrcCtx<S1, S2>) -> Result<(), Box<dyn Error>>
+where
+    S1: AsRef<str> + ?Sized,
+    S2: AsRef<str> + ?Sized,
+{
+    // Do we have nick in the msg?
+    let nick = match ctx.re_nick.captures(ctx.msg.as_ref()) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => "UNKNOWN".into(),
     };
-    trace!("{} {}", ctx.chan, ctx.msg);
+    trace!("{} {}", ctx.chan.as_ref(), ctx.msg.as_ref());
 
-    for url_cap in ctx.re_url.captures_iter(ctx.msg) {
+    for url_cap in ctx.re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
-        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
+        info!("Detected url: {} {} {}", ctx.chan.as_ref(), &nick, url);
         let u = UrlCtx {
             ts: ctx.ts,
-            chan: ctx.chan,
+            chan: ctx.chan.as_ref(),
             nick: &nick,
             url,
         };
