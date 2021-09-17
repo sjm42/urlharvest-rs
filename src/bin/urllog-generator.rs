@@ -12,6 +12,8 @@ use urlharvest::*;
 const URL_EXPIRE: i64 = 7 * 24 * 3600;
 const VEC_SZ: usize = 1024;
 const TPL_SUFFIX: &str = ".tera";
+const SLEEP_IDLE: u64 = 10;
+const SLEEP_BUSY: u64 = 2;
 
 /*
 Creating global Tera template state could be done like this:
@@ -54,10 +56,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut latest_ts: i64 = 0;
     loop {
-        thread::sleep(time::Duration::new(10, 0));
         let db_ts = db_last_change(&db)?;
         if db_ts <= latest_ts {
             trace!("Nothing new in DB.");
+            thread::sleep(time::Duration::new(SLEEP_IDLE, 0));
             continue;
         }
         latest_ts = db_ts;
@@ -74,6 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             fs::write(&filename_tmp, &template_output)?;
             fs::rename(&filename_tmp, &filename_out)?;
         }
+        thread::sleep(time::Duration::new(SLEEP_BUSY, 0));
     }
 }
 

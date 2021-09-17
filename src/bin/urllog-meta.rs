@@ -11,6 +11,7 @@ use urlharvest::*;
 const STR_NA: &str = "(N/A)";
 const STR_ERR: &str = "(Error)";
 const BATCH_SIZE: usize = 10;
+const SLEEP_POLL: u64 = 2;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut opts = OptsMeta::from_args();
@@ -90,10 +91,10 @@ pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
 
     let mut latest_ts: i64 = 0;
     loop {
-        thread::sleep(time::Duration::new(2, 0));
         let db_ts = db_last_change(db)?;
         if db_ts <= latest_ts {
             trace!("Nothing new in DB.");
+            thread::sleep(time::Duration::new(SLEEP_POLL, 0));
             continue;
         }
         latest_ts = db_ts;
@@ -117,7 +118,7 @@ pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        info!("Waiting for new stuff...");
+        info!("Polling updates");
     }
 }
 
