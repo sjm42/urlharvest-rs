@@ -1,4 +1,4 @@
-# urlharvest-rs
+# URL harvester for IRC, no bot
 
 * Harvest URLs from irssi IRC client logs, insert into SQLite db
 * Fetch metadata, e.g. title and update db.
