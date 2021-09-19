@@ -13,6 +13,13 @@ const STR_ERR: &str = "(Error)";
 const BATCH_SIZE: usize = 10;
 const SLEEP_POLL: u64 = 2;
 
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+enum ProcessMode {
+    Backlog,
+    Live,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut opts = OptsMeta::from_args();
     opts.finish()?;
@@ -21,14 +28,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     db.update_change = true;
 
     if opts.backlog {
-        process_backlog(&db)
+        process_meta(&db, ProcessMode::Backlog)
     } else {
-        process_live(&db)
+        process_meta(&db, ProcessMode::Live)
     }
 }
 
-pub fn process_backlog(db: &DbCtx) -> Result<(), Box<dyn Error>> {
-    let sql_hist = format!(
+fn process_meta(db: &DbCtx, mode: ProcessMode) -> Result<(), Box<dyn Error>> {
+    let order = match mode {
+        ProcessMode::Backlog => "asc",
+        ProcessMode::Live => "desc",
+    };
+    // find the lines in {table_url} where corresponding line does not exist
+    // in table {url_meta}
+    let sql_nometa = format!(
         "select url.id, url.url, url.seen \
         from {table_url} url \
         where not exists ( \
@@ -36,90 +49,52 @@ pub fn process_backlog(db: &DbCtx) -> Result<(), Box<dyn Error>> {
             from {table_meta} meta \
             where url.id = meta.url_id \
         ) \
-        order by seen asc \
+        order by seen {order} \
         limit {sz}",
         table_url = db.table_url,
         table_meta = db.table_meta,
-        sz = BATCH_SIZE,
-    );
-
-    loop {
-        info!("Reading history...");
-        let mut urls = Vec::with_capacity(BATCH_SIZE);
-        let mut ids = Vec::with_capacity(BATCH_SIZE);
-        let mut seen_i = 0;
-        {
-            let mut st_h = db.dbc.prepare(&sql_hist)?;
-            let mut rows = st_h.query([])?;
-            while let Some(row) = rows.next()? {
-                ids.push(row.get::<usize, i64>(0)?);
-                urls.push(row.get::<usize, String>(1)?);
-                seen_i = row.get::<usize, i64>(2)?;
-            }
-        }
-        if urls.len() < 10 {
-            break;
-        }
-
-        info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
-        for i in 0..ids.len() {
-            if let Err(e) = update_meta(db, ids[i], &urls[i]) {
-                error!("URL error: {}", e);
-            }
-            thread::sleep(time::Duration::new(0, 100_000_000));
-        }
-    }
-    Ok(())
-}
-
-pub fn process_live(db: &DbCtx) -> Result<(), Box<dyn Error>> {
-    info!("Starting live processing");
-    let sql_nometa = format!(
-        "select url.id, url.url \
-        from {table_url} url \
-        where not exists ( \
-            select null \
-            from {table_meta} meta \
-            where url.id = meta.url_id \
-        ) \
-        order by seen desc \
-        limit {sz}",
-        table_url = db.table_url,
-        table_meta = db.table_meta,
+        order = order,
         sz = BATCH_SIZE,
     );
 
     let mut latest_ts: i64 = 0;
     loop {
         let db_ts = db_last_change(db)?;
-        if db_ts <= latest_ts {
+        if mode == ProcessMode::Live && db_ts <= latest_ts {
             trace!("Nothing new in DB.");
             thread::sleep(time::Duration::new(SLEEP_POLL, 0));
             continue;
         }
         latest_ts = db_ts;
 
-        // Ha! There IS something new in db.
-        info!("Waking up");
+        info!("Starting {:?} processing", mode);
         {
             let mut ids = Vec::with_capacity(BATCH_SIZE);
             let mut urls = Vec::with_capacity(BATCH_SIZE);
+            let mut seen_i = 0;
             {
                 let mut st_nometa = db.dbc.prepare(&sql_nometa)?;
                 let mut rows = st_nometa.query([])?;
                 while let Some(row) = rows.next()? {
                     ids.push(row.get::<usize, i64>(0)?);
                     urls.push(row.get::<usize, String>(1)?);
+                    seen_i = row.get::<usize, i64>(2)?;
                 }
             }
+            info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
             for i in 0..ids.len() {
                 if let Err(e) = update_meta(db, ids[i], &urls[i]) {
                     error!("URL meta update error: {}", e);
                 }
             }
+            if mode == ProcessMode::Backlog && ids.len() < BATCH_SIZE {
+                // Backlog processing ends eventually, live processing does not.
+                break;
+            }
         }
         info!("Polling updates");
     }
+    Ok(())
 }
 
 pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> Result<(), Box<dyn Error>> {
