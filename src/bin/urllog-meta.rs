@@ -81,7 +81,9 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> Result<(), Box<dyn Error>> {
                     seen_i = row.get::<usize, i64>(2)?;
                 }
             }
-            info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
+            if seen_i > 0 {
+                info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
+            }
             for i in 0..ids.len() {
                 if let Err(e) = update_meta(db, ids[i], &urls[i]) {
                     error!("URL meta update error: {}", e);
