@@ -10,3 +10,4 @@ Consider running your irssi on a cloud vm to stay "always connected" :-)
 
 Any other kind of chat log source would be trivial to implement.
 Basically, the chat text is just scanned with regex match and detected URLs are saved & indexed.
+
