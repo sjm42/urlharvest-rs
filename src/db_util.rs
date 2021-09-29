@@ -3,7 +3,6 @@
 use chrono::*;
 use log::*;
 use rusqlite::{named_params, Connection};
-use std::error::Error;
 use std::{thread, time};
 
 const RETRY_CNT: usize = 5;
@@ -30,7 +29,7 @@ pub struct MetaCtx<'a> {
     pub desc: &'a str,
 }
 
-fn table_exist(dbc: &Connection, table: &str) -> Result<bool, Box<dyn Error>> {
+fn table_exist(dbc: &Connection, table: &str) -> anyhow::Result<bool> {
     let mut st = dbc.prepare(
         "select count(name) from sqlite_master \
         where type='table' and name=?",
@@ -39,7 +38,7 @@ fn table_exist(dbc: &Connection, table: &str) -> Result<bool, Box<dyn Error>> {
     Ok(n == 1)
 }
 
-pub fn db_init(db: &DbCtx) -> Result<(), Box<dyn Error>> {
+pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
     if !table_exist(&db.dbc, db.table_url)? {
         info!("Creating table {}", db.table_url);
         let sql = format!(
@@ -88,7 +87,7 @@ pub fn db_init(db: &DbCtx) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn db_last_change(db: &DbCtx) -> Result<i64, Box<dyn Error>> {
+pub fn db_last_change(db: &DbCtx) -> anyhow::Result<i64> {
     let sql_ts = format!(
         "select last from {table}_changed limit 1",
         table = db.table_url
@@ -97,17 +96,16 @@ pub fn db_last_change(db: &DbCtx) -> Result<i64, Box<dyn Error>> {
     Ok(st_ts.query_row([], |r| r.get::<usize, i64>(0))?)
 }
 
-pub fn db_mark_change(db: &DbCtx) -> Result<(), Box<dyn Error>> {
+pub fn db_mark_change(db: &DbCtx) -> anyhow::Result<()> {
     let sql = format!(
         "update {table}_changed set last={ts};",
         table = db.table_url,
         ts = Utc::now().timestamp()
     );
-    db.dbc.execute_batch(&sql)?;
-    Ok(())
+    Ok(db.dbc.execute_batch(&sql)?)
 }
 
-pub fn db_add_url(db: &DbCtx, ur: &UrlCtx) -> Result<(), Box<dyn Error>> {
+pub fn db_add_url(db: &DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {table} (id, seen, channel, nick, url) \
         values (null, :ts, :ch, :ni, :ur)",
@@ -141,7 +139,7 @@ pub fn db_add_url(db: &DbCtx, ur: &UrlCtx) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn db_add_meta(db: &DbCtx, m: &MetaCtx) -> Result<(), Box<dyn Error>> {
+pub fn db_add_meta(db: &DbCtx, m: &MetaCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {} (id, url_id, lang, title, desc) \
         values (null, :ur, :la, :ti, :de)",

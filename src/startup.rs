@@ -2,7 +2,7 @@
 
 use log::*;
 use rusqlite::Connection;
-use std::{env, error::Error, net::SocketAddr};
+use std::{env, net::SocketAddr};
 use structopt::StructOpt;
 
 use super::*;
@@ -21,9 +21,8 @@ pub struct OptsCommon {
     pub table_meta: String,
 }
 impl OptsCommon {
-    pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
-        expand_home(&mut self.db_file)?;
-        Ok(())
+    pub fn finish(&mut self) -> anyhow::Result<()> {
+        expand_home(&mut self.db_file)
     }
     fn get_loglevel(&self) -> LevelFilter {
         if self.trace {
@@ -46,11 +45,10 @@ pub struct OptsGenerator {
     pub html_dir: String,
 }
 impl OptsGenerator {
-    pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
         expand_home(&mut self.template_dir)?;
-        expand_home(&mut self.html_dir)?;
-        Ok(())
+        expand_home(&mut self.html_dir)
     }
 }
 
@@ -73,10 +71,9 @@ pub struct OptsHarvest {
     pub re_url: String,
 }
 impl OptsHarvest {
-    pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
-        expand_home(&mut self.irc_log_dir)?;
-        Ok(())
+        expand_home(&mut self.irc_log_dir)
     }
 }
 
@@ -88,9 +85,8 @@ pub struct OptsMeta {
     pub backlog: bool,
 }
 impl OptsMeta {
-    pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
-        self.c.finish()?;
-        Ok(())
+    pub fn finish(&mut self) -> anyhow::Result<()> {
+        self.c.finish()
     }
 }
 
@@ -102,14 +98,14 @@ pub struct OptsSearch {
     pub listen: String,
 }
 impl OptsSearch {
-    pub fn finish(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
         let _ = self.listen.parse::<SocketAddr>()?;
         Ok(())
     }
 }
 
-pub fn expand_home(pathname: &mut String) -> Result<(), Box<dyn Error>> {
+pub fn expand_home(pathname: &mut String) -> anyhow::Result<()> {
     let home = env::var("HOME")?;
     *pathname = pathname.as_str().replace("$HOME", &home);
     Ok(())
@@ -127,7 +123,7 @@ pub fn start_pgm(c: &OptsCommon, desc: &str) {
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
 }
 
-pub fn start_db(c: &OptsCommon) -> Result<DbCtx, Box<dyn Error>> {
+pub fn start_db(c: &OptsCommon) -> anyhow::Result<DbCtx> {
     let dbc = Connection::open(&c.db_file)?;
     let table_url = c.table_url.as_str();
     let table_meta = c.table_meta.as_str();

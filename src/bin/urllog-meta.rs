@@ -1,7 +1,6 @@
 // urllog-meta.rs
 
 use log::*;
-use std::error::Error;
 use std::{thread, time};
 use structopt::StructOpt;
 use webpage::{Webpage, WebpageOptions};
@@ -20,7 +19,7 @@ enum ProcessMode {
     Live,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let mut opts = OptsMeta::from_args();
     opts.finish()?;
     start_pgm(&opts.c, "URL metadata updater");
@@ -34,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn process_meta(db: &DbCtx, mode: ProcessMode) -> Result<(), Box<dyn Error>> {
+fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     let order = match mode {
         ProcessMode::Backlog => "asc",
         ProcessMode::Live => "desc",
@@ -99,7 +98,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> Result<(), Box<dyn Error>> {
+pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
     let w_opt = WebpageOptions {
         allow_insecure: true,
         timeout: time::Duration::new(5, 0),

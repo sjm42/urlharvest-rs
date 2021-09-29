@@ -1,8 +1,9 @@
 // urllog-generator.rs
 
+use anyhow::anyhow;
 use chrono::*;
 use log::*;
-use std::{error::Error, fs, thread, time};
+use std::{fs, thread, time};
 use structopt::StructOpt;
 use tera::Tera;
 
@@ -31,7 +32,7 @@ static TERA: SyncLazy<RwLock<Tera>> = SyncLazy::new(|| {
 */
 */
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let mut opts = OptsGenerator::from_args();
     opts.finish()?;
     start_pgm(&opts.c, "urllog generator");
@@ -42,12 +43,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tera = match Tera::new(&format!("{}/*.tera", tera_dir)) {
         Ok(t) => t,
         Err(e) => {
-            return Err(format!("Tera template parsing error: {}", e).into());
+            return Err(anyhow!("Tera template parsing error: {}", e));
         }
     };
     if tera.get_template_names().count() < 1 {
         error!("No templates found. Exit.");
-        return Err("Templates not found".into());
+        return Err(anyhow!("Templates not found"));
     }
     info!(
         "Found templates: [{}]",
@@ -80,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn generate_ctx(db: &DbCtx, ts_limit: i64) -> Result<tera::Context, Box<dyn Error>> {
+fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let sql_url = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
           channel, url, {table_meta}.title \

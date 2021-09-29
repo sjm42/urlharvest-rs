@@ -4,10 +4,9 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
-use std::ffi::*;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
-use std::{collections::HashMap, error::Error, time::Instant};
+use std::{collections::HashMap, ffi::*, time::Instant};
 use structopt::StructOpt;
 
 use urlharvest::*;
@@ -30,7 +29,7 @@ where
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> anyhow::Result<()> {
     let mut opts = OptsHarvest::from_args();
     opts.finish()?;
     start_pgm(&opts.c, "URL harvester");
@@ -205,7 +204,7 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
     None
 }
 
-fn handle_ircmsg<S1, S2>(db: &DbCtx, ctx: &IrcCtx<S1, S2>) -> Result<(), Box<dyn Error>>
+fn handle_ircmsg<S1, S2>(db: &DbCtx, ctx: &IrcCtx<S1, S2>) -> anyhow::Result<()>
 where
     S1: AsRef<str> + ?Sized,
     S2: AsRef<str> + ?Sized,

@@ -6,7 +6,7 @@ use regex::Regex;
 use rusqlite::Connection;
 use serde_derive::Deserialize;
 use serde_json::value::Map;
-use std::{error::Error, net::SocketAddr};
+use std::net::SocketAddr;
 use structopt::StructOpt;
 use warp::Filter;
 
@@ -30,7 +30,7 @@ pub struct SearchParam {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> anyhow::Result<()> {
     let mut opts = OptsSearch::from_args();
     opts.finish()?;
     start_pgm(&opts.c, "urllog search server");
@@ -105,7 +105,7 @@ fn my_response(
         .body(resp_body)
 }
 
-fn search(db: &str, sql: &str, srch: &SearchParam) -> Result<String, Box<dyn Error>> {
+fn search(db: &str, sql: &str, srch: &SearchParam) -> anyhow::Result<String> {
     info!("search({:?})", srch);
     let chan = sql_srch(&srch.chan);
     let nick = sql_srch(&srch.nick);
