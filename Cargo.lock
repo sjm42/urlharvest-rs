@@ -1113,7 +1113,7 @@ dependencies = [
  "pest_meta",
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
 ]
 
 [[package]]
@@ -1182,7 +1182,7 @@ checksum = "6e8fe8163d14ce7f0cdac2e040116f22eac817edabff0be91e8aff7e9accf389"
 dependencies = [
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
 ]
 
 [[package]]
@@ -1230,7 +1230,7 @@ dependencies = [
  "proc-macro-error-attr",
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
  "version_check",
 ]
 
@@ -1649,7 +1649,7 @@ checksum = "d7bc1a1ab1961464eae040d96713baa5a724a8152c1222492465b54322ec508b"
 dependencies = [
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
 ]
 
 [[package]]
@@ -1807,7 +1807,7 @@ dependencies = [
  "proc-macro-error",
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
 ]
 
 [[package]]
@@ -1823,9 +1823,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.77"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5239bc68e0fef57495900cfea4e8dc75596d9a319d7e16b1e0a440d24e6fe0a0"
+checksum = "a4eac2e6c19f5c3abc0c229bea31ff0b9b091c7b14990e8924b92902a303a0c0"
 dependencies = [
  "proc-macro2 1.0.29",
  "quote 1.0.9",
@@ -1960,7 +1960,7 @@ checksum = "154794c8f499c2619acd19e839294703e9e32e7630ef5f46ea80d4ef0fbee5eb"
 dependencies = [
  "proc-macro2 1.0.29",
  "quote 1.0.9",
- "syn 1.0.77",
+ "syn 1.0.78",
 ]
 
 [[package]]
