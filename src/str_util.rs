@@ -57,14 +57,15 @@ impl SortDedupBr for String {
     }
 }
 
-pub fn sql_srch<S: AsRef<str>>(input: S) -> String {
-    format!(
-        "%{}%",
-        input
-            .as_ref()
-            .to_lowercase()
-            .replace("*", "%")
-            .replace("?", "_")
-    )
+pub trait StringSqlSearch {
+    fn sql_search(self) -> Self;
+}
+impl StringSqlSearch for String {
+    fn sql_search(self) -> Self {
+        format!(
+            "%{}%",
+            self.to_lowercase().replace("*", "%").replace("?", "_")
+        )
+    }
 }
 // EOF

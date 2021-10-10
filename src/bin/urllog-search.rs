@@ -16,6 +16,7 @@ const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
 const RESULT_MAXSZ: usize = 100;
+const DEFAULT_CAP: usize = 65536;
 
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
 const TEXT_HTML: &str = "text/html; charset=utf-8";
@@ -107,16 +108,22 @@ where
         .body(resp_body.as_ref().into())
 }
 
-fn search(db: &str, sql: &str, srch: SearchParam) -> anyhow::Result<String> {
+fn search<S1, S2>(db: S1, sql: S2, srch: SearchParam) -> anyhow::Result<String>
+where
+    S1: AsRef<str>,
+    S2: AsRef<str>,
+{
     info!("search({:?})", srch);
-    let chan = sql_srch(&srch.chan);
-    let nick = sql_srch(&srch.nick);
-    let url = sql_srch(&srch.url);
-    let title = sql_srch(&srch.title);
+    let chan = srch.chan.sql_search();
+    let nick = srch.nick.sql_search();
+    let url = srch.url.sql_search();
+    let title = srch.title.sql_search();
     info!("Search {} {} {} {}", chan, nick, url, title);
 
-    let mut html = r#"<table>
-    <tr>
+    let mut html = String::with_capacity(DEFAULT_CAP);
+    html.push_str(
+        r#"<table>
+  <tr>
     <th>ID</th>
     <th>First seen</th>
     <th>Last seen</th>
@@ -124,11 +131,12 @@ fn search(db: &str, sql: &str, srch: SearchParam) -> anyhow::Result<String> {
     <th>Channel</th>
     <th>Nick</th>
     <th>Title + URL</th>
-    </tr>"#
-        .to_string();
-    let sqc = Connection::open(db)?;
+  </tr>"#,
+    );
+
+    let sqc = Connection::open(db.as_ref())?;
     {
-        let mut st_s = sqc.prepare(sql)?;
+        let mut st_s = sqc.prepare(sql.as_ref())?;
         let mut rows = st_s.query(&[&chan, &nick, &url, &title])?;
         while let Some(row) = rows.next()? {
             let id = row.get::<usize, i64>(0)?;
