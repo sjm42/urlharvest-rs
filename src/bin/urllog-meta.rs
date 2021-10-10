@@ -127,13 +127,15 @@ pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
         "URL metadata:\nid: {}\nurl: {}\nlang: {}\ntitle: {}\ndesc: {}",
         url_id, url, &lang, &title, &desc
     );
-    let m = MetaCtx {
-        url_id,
-        lang: &lang,
-        title: &title,
-        desc: &desc,
-    };
-    db_add_meta(db, &m)?;
+    db_add_meta(
+        db,
+        MetaCtx {
+            url_id,
+            lang: &lang,
+            title: &title,
+            desc: &desc,
+        },
+    )?;
     info!("Inserted row.");
     Ok(())
 }

@@ -5,7 +5,6 @@ use log::*;
 use regex::Regex;
 use rusqlite::Connection;
 use serde_derive::Deserialize;
-use serde_json::value::Map;
 use std::net::SocketAddr;
 use structopt::StructOpt;
 use warp::Filter;
@@ -57,21 +56,20 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let re_srch = Regex::new(RE_SEARCH)?;
-    let mut index_path = INDEX_PATH.to_string();
-    expand_home(&mut index_path)?;
+    let index_path = shellexpand::full(INDEX_PATH)?.into_owned();
 
     let mut hb_reg = Handlebars::new();
     hb_reg.register_template_file(INDEX_NAME, &index_path)?;
-    let mut tpl_data = Map::new();
+    let mut tpl_data = serde_json::value::Map::new();
     tpl_data.insert("cmd_search".into(), to_json("search"));
     let index_html = hb_reg.render(INDEX_NAME, &tpl_data)?;
+    let server_addr: SocketAddr = opts.listen;
 
     // GET / -> index html
     let req_index = warp::get()
         .and(warp::path::end())
         .map(move || my_response(TEXT_HTML, index_html.clone()));
 
-    let server_addr: SocketAddr = opts.listen.parse()?;
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
@@ -82,9 +80,9 @@ async fn main() -> anyhow::Result<()> {
                 || !re_srch.is_match(&s.url)
                 || !re_srch.is_match(&s.title)
             {
-                return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n".into());
+                return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
             }
-            match search(&opts.c.db_file, &sql_search, &s) {
+            match search(&opts.c.db_file, &sql_search, s) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {:?}", e)),
             }
@@ -95,17 +93,21 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn my_response(
-    resp_type: &str,
-    resp_body: String,
-) -> Result<warp::http::Response<String>, warp::http::Error> {
+fn my_response<S1, S2>(
+    resp_type: S1,
+    resp_body: S2,
+) -> Result<warp::http::Response<String>, warp::http::Error>
+where
+    S1: AsRef<str>,
+    S2: AsRef<str>,
+{
     warp::http::Response::builder()
         .header("cache-control", "no-store")
-        .header("content-type", resp_type)
-        .body(resp_body)
+        .header("content-type", resp_type.as_ref())
+        .body(resp_body.as_ref().into())
 }
 
-fn search(db: &str, sql: &str, srch: &SearchParam) -> anyhow::Result<String> {
+fn search(db: &str, sql: &str, srch: SearchParam) -> anyhow::Result<String> {
     info!("search({:?})", srch);
     let chan = sql_srch(&srch.chan);
     let nick = sql_srch(&srch.nick);
@@ -133,10 +135,10 @@ fn search(db: &str, sql: &str, srch: &SearchParam) -> anyhow::Result<String> {
             let first_seen = ts_y_short(row.get::<usize, i64>(1)?);
             let last_seen = ts_short(row.get::<usize, i64>(2)?);
             let num_seen = row.get::<usize, u64>(3)?;
-            let chans = sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?));
-            let nicks = sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?));
-            let url = esc_quot(row.get::<usize, String>(6)?);
-            let title = esc_ltgt(row.get::<usize, String>(7)?);
+            let chans = row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br();
+            let nicks = row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br();
+            let url = row.get::<usize, String>(6)?.esc_quot();
+            let title = row.get::<usize, String>(7)?.esc_ltgt();
 
             html.push_str(&format!(
                 "<td>{id}</td><td>{first}</td><td>{last}</td><td>{num}</td>\n\

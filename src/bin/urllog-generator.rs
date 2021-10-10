@@ -16,22 +16,6 @@ const TPL_SUFFIX: &str = ".tera";
 const SLEEP_IDLE: u64 = 10;
 const SLEEP_BUSY: u64 = 2;
 
-/*
-Creating global Tera template state could be done like this:
-
-static TERA_DIR: SyncLazy<RwLock<String>> = SyncLazy::new(|| RwLock::new(String::new()));
-static TERA: SyncLazy<RwLock<Tera>> = SyncLazy::new(|| {
-    RwLock::new(match Tera::new(&format!("{}/*.tera", TERA_DIR.read())) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Tera template parsing error: {}", e);
-            ::std::process::exit(1);
-        }
-    })
-});
-*/
-*/
-
 fn main() -> anyhow::Result<()> {
     let mut opts = OptsGenerator::from_args();
     opts.finish()?;
@@ -71,7 +55,12 @@ fn main() -> anyhow::Result<()> {
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
             let filename_out = format!("{}/{}", &opts.html_dir, &template[0..cut_idx]);
-            let filename_tmp = format!("{}.{}.tmp", filename_out, std::process::id());
+            let filename_tmp = format!(
+                "{}.{}.{}.tmp",
+                filename_out,
+                std::process::id(),
+                Utc::now().timestamp()
+            );
             info!("Generating {} from {}", filename_out, template);
             let template_output = tera.render(template, &ctx)?;
             fs::write(&filename_tmp, &template_output)?;
@@ -121,14 +110,15 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         {
             let mut st_url = db.dbc.prepare(&sql_url)?;
             let mut rows = st_url.query([ts_limit])?;
+
             while let Some(row) = rows.next()? {
                 arr_id.push(row.get::<usize, i64>(0)?);
                 arr_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
                 arr_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
                 arr_num_seen.push(row.get::<usize, i64>(3)?);
-                arr_channel.push(esc_ltgt(row.get::<usize, String>(4)?));
-                arr_url.push(esc_quot(row.get::<usize, String>(5)?));
-                arr_title.push(esc_ltgt(row.get::<usize, String>(6)?));
+                arr_channel.push(row.get::<usize, String>(4)?.esc_ltgt());
+                arr_url.push(row.get::<usize, String>(5)?.esc_quot());
+                arr_title.push(row.get::<usize, String>(6)?.esc_ltgt());
                 i_row += 1;
             }
         }
@@ -156,15 +146,16 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         {
             let mut st_uniq = db.dbc.prepare(&sql_uniq)?;
             let mut uniq_rows = st_uniq.query([ts_limit])?;
+
             while let Some(row) = uniq_rows.next()? {
                 uniq_id.push(row.get::<usize, i64>(0)?);
                 uniq_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
                 uniq_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
                 uniq_num_seen.push(row.get::<usize, u64>(3)?);
-                uniq_channel.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(4)?)));
-                uniq_nick.push(sort_dedup_br(esc_ltgt(row.get::<usize, String>(5)?)));
-                uniq_url.push(esc_quot(row.get::<usize, String>(6)?));
-                uniq_title.push(esc_ltgt(row.get::<usize, String>(7)?));
+                uniq_channel.push(row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br());
+                uniq_nick.push(row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br());
+                uniq_url.push(row.get::<usize, String>(6)?.esc_quot());
+                uniq_title.push(row.get::<usize, String>(7)?.esc_ltgt());
                 i_uniq_row += 1;
             }
         }

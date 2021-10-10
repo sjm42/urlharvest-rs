@@ -22,7 +22,8 @@ pub struct OptsCommon {
 }
 impl OptsCommon {
     pub fn finish(&mut self) -> anyhow::Result<()> {
-        expand_home(&mut self.db_file)
+        self.db_file = shellexpand::full(&self.db_file)?.into_owned();
+        Ok(())
     }
     fn get_loglevel(&self) -> LevelFilter {
         if self.trace {
@@ -47,8 +48,9 @@ pub struct OptsGenerator {
 impl OptsGenerator {
     pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
-        expand_home(&mut self.template_dir)?;
-        expand_home(&mut self.html_dir)
+        self.template_dir = shellexpand::full(&self.template_dir)?.into_owned();
+        self.html_dir = shellexpand::full(&self.html_dir)?.into_owned();
+        Ok(())
     }
 }
 
@@ -73,7 +75,8 @@ pub struct OptsHarvest {
 impl OptsHarvest {
     pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
-        expand_home(&mut self.irc_log_dir)
+        self.irc_log_dir = shellexpand::full(&self.irc_log_dir)?.into_owned();
+        Ok(())
     }
 }
 
@@ -95,20 +98,13 @@ pub struct OptsSearch {
     #[structopt(flatten)]
     pub c: OptsCommon,
     #[structopt(short, long, default_value = "127.0.0.1:8080")]
-    pub listen: String,
+    pub listen: SocketAddr,
 }
 impl OptsSearch {
     pub fn finish(&mut self) -> anyhow::Result<()> {
         self.c.finish()?;
-        let _ = self.listen.parse::<SocketAddr>()?;
         Ok(())
     }
-}
-
-pub fn expand_home(pathname: &mut String) -> anyhow::Result<()> {
-    let home = env::var("HOME")?;
-    *pathname = pathname.as_str().replace("$HOME", &home);
-    Ok(())
 }
 
 pub fn start_pgm(c: &OptsCommon, desc: &str) {

@@ -16,16 +16,12 @@ const VEC_SZ: usize = 64;
 const CHAN_UNK: &str = "UNKNOWN";
 const NICK_UNK: &str = "UNKNOWN";
 
-struct IrcCtx<'a, S1, S2>
-where
-    S1: AsRef<str> + ?Sized,
-    S2: AsRef<str> + ?Sized,
-{
+struct IrcCtx<'a> {
     re_nick: &'a Regex,
     re_url: &'a Regex,
     ts: i64,
-    chan: &'a S1,
-    msg: &'a S2,
+    chan: &'a str,
+    msg: &'a str,
 }
 
 #[tokio::main]
@@ -108,14 +104,16 @@ async fn main() -> anyhow::Result<()> {
                     current_ts = new_ts;
                 }
 
-                let ctx = IrcCtx {
-                    re_nick,
-                    re_url,
-                    ts: current_ts.timestamp(),
-                    chan,
-                    msg: &msg,
-                };
-                handle_ircmsg(&db, &ctx)?;
+                handle_ircmsg(
+                    &db,
+                    IrcCtx {
+                        re_nick,
+                        re_url,
+                        ts: current_ts.timestamp(),
+                        chan,
+                        msg: &msg,
+                    },
+                )?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -132,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("Starting live processing...");
+    db.update_change = true;
     while let Ok(Some(msg_line)) = lmux.next_line().await {
         let filename = msg_line
             .source()
@@ -139,15 +138,17 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(&chan_unk);
         let msg = msg_line.line();
-        let ctx = IrcCtx {
-            re_nick,
-            re_url,
-            ts: Utc::now().timestamp(),
-            chan,
-            msg,
-        };
-        db.update_change = true;
-        handle_ircmsg(&db, &ctx)?;
+
+        handle_ircmsg(
+            &db,
+            IrcCtx {
+                re_nick,
+                re_url,
+                ts: Utc::now().timestamp(),
+                chan,
+                msg,
+            },
+        )?;
     }
     Ok(())
 }
@@ -204,28 +205,26 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
     None
 }
 
-fn handle_ircmsg<S1, S2>(db: &DbCtx, ctx: &IrcCtx<S1, S2>) -> anyhow::Result<()>
-where
-    S1: AsRef<str> + ?Sized,
-    S2: AsRef<str> + ?Sized,
-{
+fn handle_ircmsg(db: &DbCtx, ctx: IrcCtx) -> anyhow::Result<()> {
     // Do we have nick in the msg?
-    let nick = &match ctx.re_nick.captures(ctx.msg.as_ref()) {
+    let nick = &match ctx.re_nick.captures(ctx.msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => NICK_UNK.into(),
     };
-    trace!("{} {}", ctx.chan.as_ref(), ctx.msg.as_ref());
+    trace!("{} {}", ctx.chan, ctx.msg);
 
     for url_cap in ctx.re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
-        info!("Detected url: {} {} {}", ctx.chan.as_ref(), &nick, url);
-        let u = UrlCtx {
-            ts: ctx.ts,
-            chan: ctx.chan.as_ref(),
-            nick,
-            url,
-        };
-        db_add_url(db, &u)?;
+        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
+        db_add_url(
+            db,
+            UrlCtx {
+                ts: ctx.ts,
+                chan: ctx.chan,
+                nick,
+                url,
+            },
+        )?;
     }
     Ok(())
 }

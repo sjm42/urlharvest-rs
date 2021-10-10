@@ -25,24 +25,36 @@ pub fn ts_y_short(ts: i64) -> String {
     ts_fmt(TS_FMT_YEAR_SHORT, ts)
 }
 
-pub fn esc_ltgt<S: AsRef<str>>(input: S) -> String {
-    input
-        .as_ref()
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+pub trait EscLtGt {
+    fn esc_ltgt(self) -> Self;
+}
+impl EscLtGt for String {
+    fn esc_ltgt(self) -> Self {
+        self.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    }
 }
 
-pub fn esc_quot<S: AsRef<str>>(input: S) -> String {
-    input.as_ref().replace("\"", "&quot;")
+pub trait EscQuot {
+    fn esc_quot(self) -> Self;
+}
+impl EscQuot for String {
+    fn esc_quot(self) -> Self {
+        self.replace("\"", "&quot;")
+    }
 }
 
-pub fn sort_dedup_br<S: AsRef<str>>(input: S) -> String {
-    let mut svec = input.as_ref().split_whitespace().collect::<Vec<&str>>();
-    #[allow(clippy::stable_sort_primitive)]
-    svec.sort();
-    svec.dedup();
-    svec.join("<br>")
+pub trait SortDedupBr {
+    fn sort_dedup_br(self) -> Self;
+}
+impl SortDedupBr for String {
+    fn sort_dedup_br(self) -> Self {
+        let mut svec = self.split_whitespace().collect::<Vec<&str>>();
+        svec.sort_unstable();
+        svec.dedup();
+        svec.join("<br>")
+    }
 }
 
 pub fn sql_srch<S: AsRef<str>>(input: S) -> String {

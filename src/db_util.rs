@@ -105,7 +105,7 @@ pub fn db_mark_change(db: &DbCtx) -> anyhow::Result<()> {
     Ok(db.dbc.execute_batch(&sql)?)
 }
 
-pub fn db_add_url(db: &DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
+pub fn db_add_url(db: &DbCtx, ur: UrlCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {table} (id, seen, channel, nick, url) \
         values (null, :ts, :ch, :ni, :ur)",
@@ -139,7 +139,7 @@ pub fn db_add_url(db: &DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn db_add_meta(db: &DbCtx, m: &MetaCtx) -> anyhow::Result<()> {
+pub fn db_add_meta(db: &DbCtx, m: MetaCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {} (id, url_id, lang, title, desc) \
         values (null, :ur, :la, :ti, :de)",
