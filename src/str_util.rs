@@ -13,44 +13,61 @@ pub fn ts_fmt<S: AsRef<str>>(fmt: S, ts: i64) -> String {
         .to_string()
 }
 
-pub fn ts_long(ts: i64) -> String {
-    ts_fmt(TS_FMT_LONG, ts)
+pub trait TimeStampFormats {
+    fn ts_long(self) -> String;
+    fn ts_short(self) -> String;
+    fn ts_y_short(self) -> String;
 }
+impl TimeStampFormats for i64 {
+    fn ts_long(self) -> String {
+        ts_fmt(TS_FMT_LONG, self)
+    }
 
-pub fn ts_short(ts: i64) -> String {
-    ts_fmt(TS_FMT_SHORT, ts)
-}
+    fn ts_short(self) -> String {
+        ts_fmt(TS_FMT_SHORT, self)
+    }
 
-pub fn ts_y_short(ts: i64) -> String {
-    ts_fmt(TS_FMT_YEAR_SHORT, ts)
+    fn ts_y_short(self) -> String {
+        ts_fmt(TS_FMT_YEAR_SHORT, self)
+    }
 }
 
 pub trait EscLtGt {
-    fn esc_ltgt(self) -> Self;
+    fn esc_ltgt(self) -> String;
 }
-impl EscLtGt for String {
-    fn esc_ltgt(self) -> Self {
-        self.replace("&", "&amp;")
+impl<S> EscLtGt for S
+where
+    S: AsRef<str>,
+{
+    fn esc_ltgt(self) -> String {
+        self.as_ref()
+            .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
     }
 }
 
 pub trait EscQuot {
-    fn esc_quot(self) -> Self;
+    fn esc_quot(self) -> String;
 }
-impl EscQuot for String {
-    fn esc_quot(self) -> Self {
-        self.replace("\"", "&quot;")
+impl<S> EscQuot for S
+where
+    S: AsRef<str>,
+{
+    fn esc_quot(self) -> String {
+        self.as_ref().replace("\"", "&quot;")
     }
 }
 
 pub trait SortDedupBr {
-    fn sort_dedup_br(self) -> Self;
+    fn sort_dedup_br(self) -> String;
 }
-impl SortDedupBr for String {
-    fn sort_dedup_br(self) -> Self {
-        let mut svec = self.split_whitespace().collect::<Vec<&str>>();
+impl<S> SortDedupBr for S
+where
+    S: AsRef<str>,
+{
+    fn sort_dedup_br(self) -> String {
+        let mut svec = self.as_ref().split_whitespace().collect::<Vec<&str>>();
         svec.sort_unstable();
         svec.dedup();
         svec.join("<br>")
@@ -58,13 +75,19 @@ impl SortDedupBr for String {
 }
 
 pub trait StringSqlSearch {
-    fn sql_search(self) -> Self;
+    fn sql_search(self) -> String;
 }
-impl StringSqlSearch for String {
-    fn sql_search(self) -> Self {
+impl<S> StringSqlSearch for S
+where
+    S: AsRef<str>,
+{
+    fn sql_search(self) -> String {
         format!(
             "%{}%",
-            self.to_lowercase().replace("*", "%").replace("?", "_")
+            self.as_ref()
+                .to_lowercase()
+                .replace("*", "%")
+                .replace("?", "_")
         )
     }
 }

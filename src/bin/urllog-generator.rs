@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
         latest_ts = db_ts;
 
         let ts_limit = db_ts - URL_EXPIRE;
-        info!("Generating URL logs starting from {}", ts_long(ts_limit));
+        info!("Generating URL logs starting from {}", ts_limit.ts_long());
         let ctx = generate_ctx(&db, ts_limit)?;
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
@@ -96,7 +96,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     );
 
     let mut ctx = tera::Context::new();
-    ctx.insert("last_change", &ts_long(Utc::now().timestamp()));
+    ctx.insert("last_change", &Utc::now().timestamp().ts_long());
     {
         let mut arr_id = Vec::with_capacity(VEC_SZ);
         let mut arr_first_seen = Vec::with_capacity(VEC_SZ);
@@ -113,8 +113,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
 
             while let Some(row) = rows.next()? {
                 arr_id.push(row.get::<usize, i64>(0)?);
-                arr_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
-                arr_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
+                arr_first_seen.push(row.get::<usize, i64>(1)?.ts_y_short());
+                arr_last_seen.push(row.get::<usize, i64>(2)?.ts_short());
                 arr_num_seen.push(row.get::<usize, i64>(3)?);
                 arr_channel.push(row.get::<usize, String>(4)?.esc_ltgt());
                 arr_url.push(row.get::<usize, String>(5)?.esc_quot());
@@ -149,8 +149,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
 
             while let Some(row) = uniq_rows.next()? {
                 uniq_id.push(row.get::<usize, i64>(0)?);
-                uniq_first_seen.push(ts_y_short(row.get::<usize, i64>(1)?));
-                uniq_last_seen.push(ts_short(row.get::<usize, i64>(2)?));
+                uniq_first_seen.push(row.get::<usize, i64>(1)?.ts_y_short());
+                uniq_last_seen.push(row.get::<usize, i64>(2)?.ts_short());
                 uniq_num_seen.push(row.get::<usize, u64>(3)?);
                 uniq_channel.push(row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br());
                 uniq_nick.push(row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br());

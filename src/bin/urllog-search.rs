@@ -140,8 +140,8 @@ where
         let mut rows = st_s.query(&[&chan, &nick, &url, &title])?;
         while let Some(row) = rows.next()? {
             let id = row.get::<usize, i64>(0)?;
-            let first_seen = ts_y_short(row.get::<usize, i64>(1)?);
-            let last_seen = ts_short(row.get::<usize, i64>(2)?);
+            let first_seen = row.get::<usize, i64>(1)?.ts_y_short();
+            let last_seen = row.get::<usize, i64>(2)?.ts_short();
             let num_seen = row.get::<usize, u64>(3)?;
             let chans = row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br();
             let nicks = row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br();

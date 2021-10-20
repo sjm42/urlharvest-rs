@@ -81,7 +81,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
                 }
             }
             if seen_i > 0 {
-                info!("*** PROCESSING *** at {}", &ts_y_short(seen_i));
+                info!("*** PROCESSING *** at {}", &seen_i.ts_y_short());
             }
             for i in 0..ids.len() {
                 if let Err(e) = update_meta(db, ids[i], &urls[i]) {
