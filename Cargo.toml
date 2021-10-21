@@ -1,13 +1,13 @@
 [package]
 name = "urlharvest"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
 readme = "README.md"
 keywords = ["irc", "url", "harvest", "irssi", "search"]
 license = "MIT OR Apache-2.0"
-edition = "2018"
+edition = "2021"
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
