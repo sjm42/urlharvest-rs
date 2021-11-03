@@ -70,7 +70,7 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context<tera::CtxThreadLocal>> {
+fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let sql_url = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
           channel, url, {table_meta}.title \
@@ -95,7 +95,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context<tera:
         table_meta = db.table_meta
     );
 
-    let mut ctx = tera::Context::new_threadlocal();
+    let mut ctx = tera::Context::new();
     ctx.insert("last_change", &Utc::now().timestamp().ts_long());
     {
         let mut arr_id = Vec::with_capacity(VEC_SZ);
