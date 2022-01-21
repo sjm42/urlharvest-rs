@@ -23,11 +23,11 @@ fn main() -> anyhow::Result<()> {
     let db = start_db(&opts.c)?;
 
     let tera_dir = &opts.template_dir;
-    info!("Template directory: {}", tera_dir);
-    let tera = match Tera::new(&format!("{}/*.tera", tera_dir)) {
+    info!("Template directory: {tera_dir}");
+    let tera = match Tera::new(&format!("{tera_dir}/*.tera")) {
         Ok(t) => t,
         Err(e) => {
-            return Err(anyhow!("Tera template parsing error: {}", e));
+            return Err(anyhow!("Tera template parsing error: {e:?}"));
         }
     };
     if tera.get_template_names().count() < 1 {
@@ -56,12 +56,11 @@ fn main() -> anyhow::Result<()> {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
             let filename_out = format!("{}/{}", &opts.html_dir, &template[0..cut_idx]);
             let filename_tmp = format!(
-                "{}.{}.{}.tmp",
-                filename_out,
+                "{filename_out}.{}.{}.tmp",
                 std::process::id(),
                 Utc::now().timestamp()
             );
-            info!("Generating {} from {}", filename_out, template);
+            info!("Generating {filename_out} from {template}");
             let template_output = tera.render(template, &ctx)?;
             fs::write(&filename_tmp, &template_output)?;
             fs::rename(&filename_tmp, &filename_out)?;
@@ -122,7 +121,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
                 i_row += 1;
             }
         }
-        debug!("Read {} rows.", i_row);
+        debug!("Read {i_row} rows.");
         ctx.insert("n_rows", &i_row);
         ctx.insert("id", &arr_id);
         ctx.insert("first_seen", &arr_first_seen);
@@ -159,7 +158,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
                 i_uniq_row += 1;
             }
         }
-        debug!("Read {} uniq rows.", i_uniq_row);
+        debug!("Read {i_uniq_row} uniq rows.");
         ctx.insert("n_uniq_rows", &i_uniq_row);
         ctx.insert("uniq_id", &uniq_id);
         ctx.insert("uniq_first_seen", &uniq_first_seen);

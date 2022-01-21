@@ -58,7 +58,7 @@ pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
             commit;",
             table_url = db.table_url,
         );
-        debug!("SQL:\n{}", &sql);
+        debug!("SQL:\n{sql}");
         db.dbc.execute_batch(&sql)?;
     }
     if !table_exist(&db.dbc, db.table_meta)? {
@@ -81,7 +81,7 @@ pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
             table_meta = db.table_meta,
         );
         info!("Creating new DB table+indexes.");
-        debug!("SQL:\n{}", &sql);
+        debug!("SQL:\n{sql}");
         db.dbc.execute_batch(&sql)?;
     }
     Ok(())
@@ -118,12 +118,12 @@ pub fn db_add_url(db: &DbCtx, ur: UrlCtx) -> anyhow::Result<()> {
             .execute(named_params! {":ts": ur.ts, ":ch": ur.chan, ":ni": ur.nick, ":ur": ur.url})
         {
             Ok(n) => {
-                info!("Inserted {} row", n);
+                info!("Inserted {n} row");
                 retry = 0;
                 break;
             }
             Err(e) => {
-                error!("Insert failed: {}", e);
+                error!("Insert failed: {e:?}");
             }
         }
         error!("Retrying in {}s...", RETRY_SLEEP);
@@ -134,16 +134,16 @@ pub fn db_add_url(db: &DbCtx, ur: UrlCtx) -> anyhow::Result<()> {
         db_mark_change(db)?;
     }
     if retry > 0 {
-        error!("GAVE UP after {} retries.", RETRY_CNT);
+        error!("GAVE UP after {RETRY_CNT} retries.");
     }
     Ok(())
 }
 
 pub fn db_add_meta(db: &DbCtx, m: MetaCtx) -> anyhow::Result<()> {
     let sql_i = format!(
-        "insert into {} (id, url_id, lang, title, desc) \
+        "insert into {table_meta} (id, url_id, lang, title, desc) \
         values (null, :ur, :la, :ti, :de)",
-        db.table_meta
+        table_meta = db.table_meta
     );
     let mut st_i = db.dbc.prepare(&sql_i)?;
     st_i.execute(named_params! {

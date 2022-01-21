@@ -46,8 +46,8 @@ async fn main() -> anyhow::Result<()> {
             log_files.push(log_f);
         }
     }
-    debug!("My logfiles: {:?}", log_files);
-    debug!("My chans: {:?}", chans);
+    debug!("My logfiles: {log_files:?}");
+    debug!("My chans: {chans:?}");
 
     let re_nick = &Regex::new(&opts.re_nick)?;
     let re_url = &Regex::new(&opts.re_url)?;
@@ -178,7 +178,7 @@ fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         if let Ok(naive_date) = NaiveDate::parse_from_str(&s, "%Y%b%d") {
             let naive_ts = naive_date.and_hms(0, 0, 0);
             if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                trace!("Found daychange {:?}", new_ts);
+                trace!("Found daychange {new_ts:?}");
                 return Some(new_ts);
             }
         }
@@ -197,7 +197,7 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         let s = format!("{}{}{}-{}{}{}", year, mon, day, hh, mm, ss);
         if let Ok(naive_ts) = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S") {
             if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                trace!("Found timestamp {:?}", new_ts);
+                trace!("Found timestamp {new_ts:?}");
                 return Some(new_ts);
             }
         }
@@ -211,11 +211,10 @@ fn handle_ircmsg(db: &DbCtx, ctx: IrcCtx) -> anyhow::Result<()> {
         Some(nick_match) => nick_match[1].to_owned(),
         None => NICK_UNK.into(),
     };
-    trace!("{} {}", ctx.chan, ctx.msg);
 
     for url_cap in ctx.re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
-        info!("Detected url: {} {} {}", ctx.chan, &nick, url);
+        info!("Detected url: {chan} {nick} {url}", chan = ctx.chan);
         db_add_url(
             db,
             UrlCtx {

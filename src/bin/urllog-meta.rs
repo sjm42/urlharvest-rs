@@ -52,7 +52,6 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
         limit {sz}",
         table_url = db.table_url,
         table_meta = db.table_meta,
-        order = order,
         sz = BATCH_SIZE,
     );
 
@@ -66,7 +65,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
         }
         latest_ts = db_ts;
 
-        info!("Starting {:?} processing", mode);
+        info!("Starting {mode:?} processing");
         {
             let mut ids = Vec::with_capacity(BATCH_SIZE);
             let mut urls = Vec::with_capacity(BATCH_SIZE);
@@ -85,7 +84,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
             }
             for i in 0..ids.len() {
                 if let Err(e) = update_meta(db, ids[i], &urls[i]) {
-                    error!("URL meta update error: {}", e);
+                    error!("URL meta update error: {e:?}");
                 }
             }
             if mode == ProcessMode::Backlog && ids.len() < BATCH_SIZE {
@@ -104,7 +103,7 @@ pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
         timeout: time::Duration::new(5, 0),
         ..Default::default()
     };
-    info!("Fetching URL {}", url);
+    info!("Fetching URL {url}");
     let lang: String;
     let title: String;
     let desc: String;
@@ -119,14 +118,11 @@ pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
         }
         Err(e) => {
             lang = STR_ERR.into();
-            title = format!("(Error: {})", e);
+            title = format!("(Error: {e:?})");
             desc = STR_ERR.into();
         }
     }
-    info!(
-        "URL metadata:\nid: {}\nurl: {}\nlang: {}\ntitle: {}\ndesc: {}",
-        url_id, url, &lang, &title, &desc
-    );
+    info!("URL metadata:\nid: {url_id}\nurl: {url}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
     db_add_meta(
         db,
         MetaCtx {

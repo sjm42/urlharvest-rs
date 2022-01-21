@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             }
             match search(&opts.c.db_file, &sql_search, s) {
                 Ok(result) => my_response(TEXT_HTML, result),
-                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {:?}", e)),
+                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
         });
 
@@ -113,12 +113,12 @@ where
     S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    info!("search({:?})", srch);
+    info!("search({srch:?})");
     let chan = srch.chan.sql_search();
     let nick = srch.nick.sql_search();
     let url = srch.url.sql_search();
     let title = srch.title.sql_search();
-    info!("Search {} {} {} {}", chan, nick, url, title);
+    info!("Search {chan} {nick} {url} {title}");
 
     let mut html = String::with_capacity(DEFAULT_CAP);
     html.push_str(
@@ -149,17 +149,9 @@ where
             let title = row.get::<usize, String>(7)?.esc_ltgt();
 
             html.push_str(&format!(
-                "<td>{id}</td><td>{first}</td><td>{last}</td><td>{num}</td>\n\
+                "<td>{id}</td><td>{first_seen}</td><td>{last_seen}</td><td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
-                id = id,
-                first = first_seen,
-                last = last_seen,
-                num = num_seen,
-                chans = chans,
-                nicks = nicks,
-                title = title,
-                url = url,
             ));
         }
     }
