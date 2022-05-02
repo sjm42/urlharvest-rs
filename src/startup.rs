@@ -21,7 +21,7 @@ pub struct OptsCommon {
     #[structopt(short, long)]
     pub trace: bool,
 
-    #[structopt(short, long, default_value = "$HOME/urllog/cfg/urlharvest.json")]
+    #[structopt(short, long, default_value = "$HOME/urlharvest/config/urlharvest.json")]
     pub config_file: String,
     #[structopt(short, long)]
     pub read_history: bool,
