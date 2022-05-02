@@ -5,13 +5,13 @@ use log::*;
 use rusqlite::{named_params, Connection};
 use std::{thread, time};
 
+use crate::*;
+
 const RETRY_CNT: usize = 5;
 const RETRY_SLEEP: u64 = 1;
 
-pub struct DbCtx<'s> {
+pub struct DbCtx {
     pub dbc: Connection,
-    pub table_url: &'s str,
-    pub table_meta: &'s str,
     pub update_change: bool,
 }
 
@@ -39,8 +39,8 @@ fn table_exist(dbc: &Connection, table: &str) -> anyhow::Result<bool> {
 }
 
 pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
-    if !table_exist(&db.dbc, db.table_url)? {
-        info!("Creating table {}", db.table_url);
+    if !table_exist(&db.dbc, TABLE_URL)? {
+        info!("Creating table {TABLE_URL}");
         let sql = format!(
             "begin; \
             create table {table_url} ( \
@@ -56,13 +56,13 @@ pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
             create table {table_url}_changed (last integer); \
             insert into {table_url}_changed values (0); \
             commit;",
-            table_url = db.table_url,
+            table_url = TABLE_URL
         );
         debug!("SQL:\n{sql}");
         db.dbc.execute_batch(&sql)?;
     }
-    if !table_exist(&db.dbc, db.table_meta)? {
-        info!("Creating table {}", db.table_meta);
+    if !table_exist(&db.dbc, TABLE_META)? {
+        info!("Creating table {TABLE_META}");
         let sql = format!(
             "begin; \
             create table {table_meta} ( \
@@ -77,8 +77,8 @@ pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
             ); \
             create index {table_meta}_urlid on {table_meta}(url_id); \
             commit;",
-            table_url = db.table_url,
-            table_meta = db.table_meta,
+            table_url = TABLE_URL,
+            table_meta = TABLE_META
         );
         info!("Creating new DB table+indexes.");
         debug!("SQL:\n{sql}");
@@ -88,18 +88,15 @@ pub fn db_init(db: &DbCtx) -> anyhow::Result<()> {
 }
 
 pub fn db_last_change(db: &DbCtx) -> anyhow::Result<i64> {
-    let sql_ts = format!(
-        "select last from {table}_changed limit 1",
-        table = db.table_url
-    );
+    let sql_ts = format!("select last from {table} limit 1", table = TABLE_CHANGED);
     let mut st_ts = db.dbc.prepare(&sql_ts)?;
     Ok(st_ts.query_row([], |r| r.get::<usize, i64>(0))?)
 }
 
 pub fn db_mark_change(db: &DbCtx) -> anyhow::Result<()> {
     let sql = format!(
-        "update {table}_changed set last={ts};",
-        table = db.table_url,
+        "update {table} set last={ts};",
+        table = TABLE_CHANGED,
         ts = Utc::now().timestamp()
     );
     Ok(db.dbc.execute_batch(&sql)?)
@@ -109,7 +106,7 @@ pub fn db_add_url(db: &DbCtx, ur: UrlCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {table} (id, seen, channel, nick, url) \
         values (null, :ts, :ch, :ni, :ur)",
-        table = db.table_url
+        table = TABLE_URL
     );
     let mut st_i = db.dbc.prepare(&sql_i)?;
     let mut retry = 0;
@@ -143,7 +140,7 @@ pub fn db_add_meta(db: &DbCtx, m: MetaCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {table_meta} (id, url_id, lang, title, desc) \
         values (null, :ur, :la, :ti, :de)",
-        table_meta = db.table_meta
+        table_meta = TABLE_META
     );
     let mut st_i = db.dbc.prepare(&sql_i)?;
     st_i.execute(named_params! {

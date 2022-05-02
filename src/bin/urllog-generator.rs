@@ -79,8 +79,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         group by channel, url \
         having max(seen) > ? \
         order by max(seen) desc",
-        table_url = db.table_url,
-        table_meta = db.table_meta
+        table_url = TABLE_URL,
+        table_meta = TABLE_META
     );
     let sql_uniq = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
@@ -91,8 +91,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         group by url \
         having max(seen) > ? \
         order by max(seen) desc",
-        table_url = db.table_url,
-        table_meta = db.table_meta
+        table_url = TABLE_URL,
+        table_meta = TABLE_META
     );
 
     let mut ctx = tera::Context::new();

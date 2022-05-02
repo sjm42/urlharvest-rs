@@ -8,8 +8,9 @@ use structopt::StructOpt;
 
 use super::*;
 
-pub const TABLE_URL: &str = "urllog";
-pub const TABLE_META: &str = "urlmeta";
+pub const TABLE_URL: &str = "url";
+pub const TABLE_CHANGED: &str = "url_changed";
+pub const TABLE_META: &str = "url_meta";
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct OptsCommon {
@@ -82,12 +83,8 @@ pub fn start_pgm(c: &OptsCommon, desc: &str) {
 
 pub fn start_db(c: &ConfigCommon) -> anyhow::Result<DbCtx> {
     let dbc = Connection::open(&c.db_file)?;
-    let table_url = TABLE_URL;
-    let table_meta = TABLE_META;
     let db = DbCtx {
         dbc,
-        table_url,
-        table_meta,
         update_change: false,
     };
     db_init(&db)?;

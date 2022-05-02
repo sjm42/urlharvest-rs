@@ -1,6 +1,6 @@
 {
     "irc_log_dir": "$HOME/irclogs/ircnet",
-    "db_file": "$HOME/urlharvest/data/urllog.db",
+    "db_file": "$HOME/urlharvest/data/url.db",
     "template_dir": "$HOME/urlharvest/templates",
     "html_dir": "$HOME/urlharvest/html",
     "regex_log": "^(#\\S*)\\.log$",

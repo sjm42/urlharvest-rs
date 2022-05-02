@@ -51,8 +51,8 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
         ) \
         order by seen {order} \
         limit {sz}",
-        table_url = db.table_url,
-        table_meta = db.table_meta,
+        table_url = TABLE_URL,
+        table_meta = TABLE_META,
         sz = BATCH_SIZE,
     );
 
