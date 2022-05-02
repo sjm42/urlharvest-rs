@@ -1,16 +1,11 @@
 // startup.rs
 
 use log::*;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::{env, fs::File, io::BufReader, net::SocketAddr};
 use structopt::StructOpt;
 
 use super::*;
-
-pub const TABLE_URL: &str = "url";
-pub const TABLE_CHANGED: &str = "url_changed";
-pub const TABLE_META: &str = "url_meta";
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct OptsCommon {
@@ -59,35 +54,30 @@ pub struct ConfigCommon {
 }
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
+        debug!("Reading config file {}", &opts.config_file);
         let mut config: ConfigCommon =
             serde_json::from_reader(BufReader::new(File::open(&opts.config_file)?))?;
+        debug!("expanding db_file");
         config.db_file = shellexpand::full(&config.db_file)?.into_owned();
+        debug!("expanding irc_log_dir");
         config.irc_log_dir = shellexpand::full(&config.irc_log_dir)?.into_owned();
+        debug!("expanding template_dir");
         config.template_dir = shellexpand::full(&config.template_dir)?.into_owned();
+        debug!("expanding html_dir");
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();
         Ok(config)
     }
 }
 
-pub fn start_pgm(c: &OptsCommon, desc: &str) {
+pub fn start_pgm(c: &OptsCommon, name: &str) {
     env_logger::Builder::new()
-        .filter_level(c.get_loglevel())
+        .filter_module(name, c.get_loglevel())
         .format_timestamp_secs()
         .init();
-    info!("Starting up {desc}...");
+    info!("Starting up {name}...");
     debug!("Git branch: {}", env!("GIT_BRANCH"));
     debug!("Git commit: {}", env!("GIT_COMMIT"));
     debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
     debug!("Compiler version: {}", env!("RUSTC_VERSION"));
-}
-
-pub fn start_db(c: &ConfigCommon) -> anyhow::Result<DbCtx> {
-    let dbc = Connection::open(&c.db_file)?;
-    let db = DbCtx {
-        dbc,
-        update_change: false,
-    };
-    db_init(&db)?;
-    Ok(db)
 }
 // EOF

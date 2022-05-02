@@ -3,7 +3,6 @@
 use handlebars::{to_json, Handlebars};
 use log::*;
 use regex::Regex;
-use rusqlite::Connection;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use structopt::StructOpt;
@@ -33,13 +32,16 @@ pub struct SearchParam {
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "urllog search server");
+    start_pgm(&opts, "urllog_search");
+    info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     {
         // Just init the database if necessary,
         // and then drop the connection.
-        let _db = start_db(&cfg)?;
+        let _db = start_db(&cfg).await?;
     }
+
+    /*
     let sql_search = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
         group_concat(channel, ' '), group_concat(nick, ' '),
@@ -92,9 +94,11 @@ async fn main() -> anyhow::Result<()> {
 
     let req_routes = req_search.or(req_index);
     warp::serve(req_routes).run(server_addr).await;
+     */
     Ok(())
 }
 
+/*
 fn my_response<S1, S2>(
     resp_type: S1,
     resp_body: S2,
@@ -160,4 +164,5 @@ where
     html.push_str("</table>\n");
     Ok(html)
 }
+ */
 // EOF

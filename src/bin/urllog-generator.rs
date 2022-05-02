@@ -1,7 +1,8 @@
 // urllog-generator.rs
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use chrono::*;
+use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use std::{fs, thread, time};
 use structopt::StructOpt;
@@ -16,12 +17,16 @@ const TPL_SUFFIX: &str = ".tera";
 const SLEEP_IDLE: u64 = 10;
 const SLEEP_BUSY: u64 = 2;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "urllog generator");
+    start_pgm(&opts, "urllog_generator");
+    info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
-    let db = start_db(&cfg)?;
+    debug!("Config:\n{:#?}", &cfg);
+
+    let mut db = start_db(&cfg).await?;
 
     let tera_dir = &cfg.template_dir;
     info!("Template directory: {tera_dir}");
@@ -33,7 +38,7 @@ fn main() -> anyhow::Result<()> {
     };
     if tera.get_template_names().count() < 1 {
         error!("No templates found. Exit.");
-        return Err(anyhow!("Templates not found"));
+        bail!("Templates not found");
     }
     info!(
         "Found templates: [{}]",
@@ -42,7 +47,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut latest_ts: i64 = 0;
     loop {
-        let db_ts = db_last_change(&db)?;
+        let db_ts = db_last_change(&mut db).await?;
         if db_ts <= latest_ts {
             trace!("Nothing new in DB.");
             thread::sleep(time::Duration::new(SLEEP_IDLE, 0));
@@ -52,14 +57,14 @@ fn main() -> anyhow::Result<()> {
 
         let ts_limit = db_ts - URL_EXPIRE;
         info!("Generating URL logs starting from {}", ts_limit.ts_long());
-        let ctx = generate_ctx(&db, ts_limit)?;
+        let ctx = generate_ctx(&mut db, ts_limit).await?;
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
             let filename_out = format!("{}/{}", &cfg.html_dir, &template[0..cut_idx]);
             let filename_tmp = format!(
                 "{filename_out}.{}.{}.tmp",
                 std::process::id(),
-                Utc::now().timestamp()
+                Utc::now().timestamp_nanos()
             );
             info!("Generating {filename_out} from {template}");
             let template_output = tera.render(template, &ctx)?;
@@ -70,10 +75,22 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
+#[derive(Debug, sqlx::FromRow)]
+struct DbRead {
+    id: i64,
+    seen_first: i64,
+    seen_last: i64,
+    seen_count: i64,
+    channel: String,
+    nick: String,
+    url: String,
+    title: String,
+}
+
+async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let sql_url = format!(
-        "select min(u.id), min(seen), max(seen), count(seen), \
-          channel, url, {table_meta}.title \
+        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+          channel, nick, url, {table_meta}.title \
         from {table_url} as u \
         inner join {table_meta} on {table_meta}.url_id = u.id \
         group by channel, url \
@@ -83,8 +100,8 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         table_meta = TABLE_META
     );
     let sql_uniq = format!(
-        "select min(u.id), min(seen), max(seen), count(seen), \
-        group_concat(channel, ' '), group_concat(nick, ' '), \
+        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+        group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
         url, {table_meta}.title \
         from {table_url} as u \
         inner join {table_meta} on {table_meta}.url_id = u.id \
@@ -103,22 +120,25 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         let mut arr_last_seen = Vec::with_capacity(VEC_SZ);
         let mut arr_num_seen = Vec::with_capacity(VEC_SZ);
         let mut arr_channel = Vec::with_capacity(VEC_SZ);
+        let mut arr_nick = Vec::with_capacity(VEC_SZ);
         let mut arr_url = Vec::with_capacity(VEC_SZ);
         let mut arr_title = Vec::with_capacity(VEC_SZ);
 
         let mut i_row: usize = 0;
         {
-            let mut st_url = db.dbc.prepare(&sql_url)?;
-            let mut rows = st_url.query([ts_limit])?;
+            let mut st_url = sqlx::query_as::<_, DbRead>(&sql_url)
+                .bind(ts_limit)
+                .fetch(&mut db.dbc);
 
-            while let Some(row) = rows.next()? {
-                arr_id.push(row.get::<usize, i64>(0)?);
-                arr_first_seen.push(row.get::<usize, i64>(1)?.ts_y_short());
-                arr_last_seen.push(row.get::<usize, i64>(2)?.ts_short());
-                arr_num_seen.push(row.get::<usize, i64>(3)?);
-                arr_channel.push(row.get::<usize, String>(4)?.esc_ltgt());
-                arr_url.push(row.get::<usize, String>(5)?.esc_quot());
-                arr_title.push(row.get::<usize, String>(6)?.esc_ltgt());
+            while let Some(row) = st_url.try_next().await? {
+                arr_id.push(row.id);
+                arr_first_seen.push(row.seen_first.ts_y_short());
+                arr_last_seen.push(row.seen_last.ts_short());
+                arr_num_seen.push(row.seen_count);
+                arr_channel.push(row.channel.esc_ltgt());
+                arr_nick.push(row.nick.esc_ltgt());
+                arr_url.push(row.url.esc_quot());
+                arr_title.push(row.title.esc_ltgt());
                 i_row += 1;
             }
         }
@@ -129,6 +149,7 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
         ctx.insert("last_seen", &arr_last_seen);
         ctx.insert("num_seen", &arr_num_seen);
         ctx.insert("channel", &arr_channel);
+        ctx.insert("nick", &arr_nick);
         ctx.insert("url", &arr_url);
         ctx.insert("title", &arr_title);
     }
@@ -144,18 +165,19 @@ fn generate_ctx(db: &DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
 
         let mut i_uniq_row: usize = 0;
         {
-            let mut st_uniq = db.dbc.prepare(&sql_uniq)?;
-            let mut uniq_rows = st_uniq.query([ts_limit])?;
+            let mut st_uniq = sqlx::query_as::<_, DbRead>(&sql_uniq)
+                .bind(ts_limit)
+                .fetch(&mut db.dbc);
 
-            while let Some(row) = uniq_rows.next()? {
-                uniq_id.push(row.get::<usize, i64>(0)?);
-                uniq_first_seen.push(row.get::<usize, i64>(1)?.ts_y_short());
-                uniq_last_seen.push(row.get::<usize, i64>(2)?.ts_short());
-                uniq_num_seen.push(row.get::<usize, u64>(3)?);
-                uniq_channel.push(row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br());
-                uniq_nick.push(row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br());
-                uniq_url.push(row.get::<usize, String>(6)?.esc_quot());
-                uniq_title.push(row.get::<usize, String>(7)?.esc_ltgt());
+            while let Some(row) = st_uniq.try_next().await? {
+                uniq_id.push(row.id);
+                uniq_first_seen.push(row.seen_first.ts_y_short());
+                uniq_last_seen.push(row.seen_last.ts_short());
+                uniq_num_seen.push(row.seen_count);
+                uniq_channel.push(row.channel.esc_ltgt().sort_dedup_br());
+                uniq_nick.push(row.nick.esc_ltgt().sort_dedup_br());
+                uniq_url.push(row.url.esc_quot());
+                uniq_title.push(row.title.esc_ltgt());
                 i_uniq_row += 1;
             }
         }

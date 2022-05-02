@@ -4,6 +4,8 @@ use log::*;
 use std::{thread, time};
 use structopt::StructOpt;
 use webpage::{Webpage, WebpageOptions};
+// provides `try_next`
+use futures::TryStreamExt;
 
 use urlharvest::*;
 
@@ -12,29 +14,39 @@ const STR_ERR: &str = "(Error)";
 const BATCH_SIZE: usize = 10;
 const SLEEP_POLL: u64 = 2;
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 enum ProcessMode {
     Backlog,
     Live,
 }
 
-fn main() -> anyhow::Result<()> {
+#[derive(Debug, sqlx::FromRow)]
+struct NoMeta {
+    id: i64,
+    url: String,
+    seen: i64,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "URL metadata updater");
+    start_pgm(&opts, "urllog_meta");
+    info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
-    let mut db = start_db(&cfg)?;
+    debug!("Config:\n{:#?}", &cfg);
+
+    let mut db = start_db(&cfg).await?;
     db.update_change = true;
 
     if opts.meta_backlog {
-        process_meta(&db, ProcessMode::Backlog)
+        process_meta(&mut db, ProcessMode::Backlog).await
     } else {
-        process_meta(&db, ProcessMode::Live)
+        process_meta(&mut db, ProcessMode::Live).await
     }
 }
 
-fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
+async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     let order = match mode {
         ProcessMode::Backlog => "asc",
         ProcessMode::Live => "desc",
@@ -58,7 +70,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
 
     let mut latest_ts: i64 = 0;
     loop {
-        let db_ts = db_last_change(db)?;
+        let db_ts = db_last_change(db).await?;
         if mode == ProcessMode::Live && db_ts <= latest_ts {
             trace!("Nothing new in DB.");
             thread::sleep(time::Duration::new(SLEEP_POLL, 0));
@@ -72,19 +84,18 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
             let mut urls = Vec::with_capacity(BATCH_SIZE);
             let mut seen_i = 0;
             {
-                let mut st_nometa = db.dbc.prepare(&sql_nometa)?;
-                let mut rows = st_nometa.query([])?;
-                while let Some(row) = rows.next()? {
-                    ids.push(row.get::<usize, i64>(0)?);
-                    urls.push(row.get::<usize, String>(1)?);
-                    seen_i = row.get::<usize, i64>(2)?;
+                let mut st_nometa = sqlx::query_as::<_, NoMeta>(&sql_nometa).fetch(&mut db.dbc);
+                while let Some(row) = st_nometa.try_next().await? {
+                    ids.push(row.id);
+                    urls.push(row.url);
+                    seen_i = row.seen;
                 }
             }
             if seen_i > 0 {
                 info!("*** PROCESSING *** at {}", &seen_i.ts_y_short());
             }
             for i in 0..ids.len() {
-                if let Err(e) = update_meta(db, ids[i], &urls[i]) {
+                if let Err(e) = update_meta(db, ids[i], &urls[i]).await {
                     error!("URL meta update error: {e:?}");
                 }
             }
@@ -98,7 +109,7 @@ fn process_meta(db: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
+pub async fn update_meta(db: &mut DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
     let w_opt = WebpageOptions {
         allow_insecure: true,
         timeout: time::Duration::new(5, 0),
@@ -126,13 +137,14 @@ pub fn update_meta(db: &DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
     info!("URL metadata:\nid: {url_id}\nurl: {url}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
     db_add_meta(
         db,
-        MetaCtx {
+        &MetaCtx {
             url_id,
-            lang: &lang,
-            title: &title,
-            desc: &desc,
+            lang: lang,
+            title: title,
+            desc: desc,
         },
-    )?;
+    )
+    .await?;
     info!("Inserted row.");
     Ok(())
 }

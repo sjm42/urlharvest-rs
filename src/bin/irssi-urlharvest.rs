@@ -4,6 +4,7 @@ use chrono::*;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
+use sqlx::Executor;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, ffi::*, time::Instant};
@@ -16,21 +17,22 @@ const VEC_SZ: usize = 64;
 const CHAN_UNK: &str = "UNKNOWN";
 const NICK_UNK: &str = "UNKNOWN";
 
-struct IrcCtx<'a> {
-    re_nick: &'a Regex,
-    re_url: &'a Regex,
+struct IrcCtx {
     ts: i64,
-    chan: &'a str,
-    msg: &'a str,
+    chan: String,
+    msg: String,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "URL harvester");
+    start_pgm(&opts, "irssi_urlharvest");
+    info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
-    let mut db = start_db(&cfg)?;
+    debug!("Config:\n{:#?}", &cfg);
+
+    let mut db = start_db(&cfg).await?;
 
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
     let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
@@ -50,8 +52,8 @@ async fn main() -> anyhow::Result<()> {
     debug!("My logfiles: {log_files:?}");
     debug!("My chans: {chans:?}");
 
-    let re_nick = &Regex::new(&cfg.regex_nick)?;
-    let re_url = &Regex::new(&cfg.regex_url)?;
+    let re_nick = Regex::new(&cfg.regex_nick)?;
+    let re_url = Regex::new(&cfg.regex_url)?;
     let mut lmux = MuxedLines::new()?;
     let chan_unk = CHAN_UNK.to_owned();
     if opts.read_history {
@@ -77,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
             Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
 
         let mut tx_i: usize = 0;
-        db.dbc.execute_batch("begin")?;
+        db.dbc.execute("BEGIN").await?;
         for log_f in &log_files {
             let log_nopath = log_f.path().file_name().unwrap().to_os_string();
             let chan = chans.get(&log_nopath).unwrap_or(&chan_unk);
@@ -87,8 +89,8 @@ async fn main() -> anyhow::Result<()> {
                 let msg = line?;
                 tx_i += 1;
                 if tx_i >= TX_SZ {
-                    db.dbc.execute_batch("commit")?;
-                    db.dbc.execute_batch("begin")?;
+                    db.dbc.execute("COMMIT").await?;
+                    db.dbc.execute("BEGIN").await?;
                     tx_i = 0;
                 }
 
@@ -106,20 +108,21 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 handle_ircmsg(
-                    &db,
+                    &mut db,
+                    &re_nick,
+                    &re_url,
                     IrcCtx {
-                        re_nick,
-                        re_url,
                         ts: current_ts.timestamp(),
-                        chan,
-                        msg: &msg,
+                        chan: chan.to_owned(),
+                        msg: msg,
                     },
-                )?;
+                )
+                .await?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
         }
-        db.dbc.execute_batch("commit")?;
+        db.dbc.execute("COMMIT").await?;
         info!(
             "History read completed in {:.3} s",
             start_ts.elapsed().as_millis() as f64 / 1000.0
@@ -141,16 +144,18 @@ async fn main() -> anyhow::Result<()> {
         let msg = msg_line.line();
 
         handle_ircmsg(
-            &db,
+            &mut db,
+            &re_nick,
+            &re_url,
             IrcCtx {
-                re_nick,
-                re_url,
                 ts: Utc::now().timestamp(),
-                chan,
-                msg,
+                chan: chan.to_owned(),
+                msg: msg.to_owned(),
             },
-        )?;
+        )
+        .await?;
     }
+
     Ok(())
 }
 
@@ -206,25 +211,31 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
     None
 }
 
-fn handle_ircmsg(db: &DbCtx, ctx: IrcCtx) -> anyhow::Result<()> {
+async fn handle_ircmsg(
+    db: &mut DbCtx,
+    re_nick: &Regex,
+    re_url: &Regex,
+    ctx: IrcCtx,
+) -> anyhow::Result<()> {
     // Do we have nick in the msg?
-    let nick = &match ctx.re_nick.captures(ctx.msg) {
+    let nick = &match re_nick.captures(&ctx.msg) {
         Some(nick_match) => nick_match[1].to_owned(),
         None => NICK_UNK.into(),
     };
 
-    for url_cap in ctx.re_url.captures_iter(ctx.msg.as_ref()) {
+    for url_cap in re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
         info!("Detected url: {chan} {nick} {url}", chan = ctx.chan);
         db_add_url(
             db,
-            UrlCtx {
+            &UrlCtx {
                 ts: ctx.ts,
-                chan: ctx.chan,
-                nick,
-                url,
+                chan: ctx.chan.to_string(),
+                nick: nick.to_owned(),
+                url: url.to_owned(),
             },
-        )?;
+        )
+        .await?;
     }
     Ok(())
 }
