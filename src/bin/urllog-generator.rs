@@ -17,12 +17,13 @@ const SLEEP_IDLE: u64 = 10;
 const SLEEP_BUSY: u64 = 2;
 
 fn main() -> anyhow::Result<()> {
-    let mut opts = OptsGenerator::from_args();
+    let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts.c, "urllog generator");
-    let db = start_db(&opts.c)?;
+    start_pgm(&opts, "urllog generator");
+    let cfg = ConfigCommon::new(&opts)?;
+    let db = start_db(&cfg)?;
 
-    let tera_dir = &opts.template_dir;
+    let tera_dir = &cfg.template_dir;
     info!("Template directory: {tera_dir}");
     let tera = match Tera::new(&format!("{tera_dir}/*.tera")) {
         Ok(t) => t,
@@ -54,7 +55,7 @@ fn main() -> anyhow::Result<()> {
         let ctx = generate_ctx(&db, ts_limit)?;
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
-            let filename_out = format!("{}/{}", &opts.html_dir, &template[0..cut_idx]);
+            let filename_out = format!("{}/{}", &cfg.html_dir, &template[0..cut_idx]);
             let filename_tmp = format!(
                 "{filename_out}.{}.{}.tmp",
                 std::process::id(),

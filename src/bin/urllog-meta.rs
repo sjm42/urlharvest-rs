@@ -20,13 +20,14 @@ enum ProcessMode {
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut opts = OptsMeta::from_args();
+    let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts.c, "URL metadata updater");
-    let mut db = start_db(&opts.c)?;
+    start_pgm(&opts, "URL metadata updater");
+    let cfg = ConfigCommon::new(&opts)?;
+    let mut db = start_db(&cfg)?;
     db.update_change = true;
 
-    if opts.backlog {
+    if opts.meta_backlog {
         process_meta(&db, ProcessMode::Backlog)
     } else {
         process_meta(&db, ProcessMode::Live)

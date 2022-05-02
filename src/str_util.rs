@@ -41,9 +41,9 @@ where
 {
     fn esc_ltgt(self) -> String {
         self.as_ref()
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
     }
 }
 
@@ -55,7 +55,7 @@ where
     S: AsRef<str>,
 {
     fn esc_quot(self) -> String {
-        self.as_ref().replace("\"", "&quot;")
+        self.as_ref().replace('\"', "&quot;")
     }
 }
 
@@ -86,8 +86,8 @@ where
             "%{}%",
             self.as_ref()
                 .to_lowercase()
-                .replace("*", "%")
-                .replace("?", "_")
+                .replace('*', "%")
+                .replace('?', "_")
         )
     }
 }

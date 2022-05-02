@@ -26,17 +26,18 @@ struct IrcCtx<'a> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsHarvest::from_args();
+    let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts.c, "URL harvester");
-    let mut db = start_db(&opts.c)?;
+    start_pgm(&opts, "URL harvester");
+    let cfg = ConfigCommon::new(&opts)?;
+    let mut db = start_db(&cfg)?;
 
     let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
     let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
 
-    debug!("Scanning dir {}", &opts.irc_log_dir);
-    let re_log = Regex::new(&opts.re_log)?;
-    for log_fd in fs::read_dir(&opts.irc_log_dir)? {
+    debug!("Scanning dir {}", &cfg.irc_log_dir);
+    let re_log = Regex::new(&cfg.regex_log)?;
+    for log_fd in fs::read_dir(&cfg.irc_log_dir)? {
         let log_f = log_fd?;
         if let Some(re_match) = re_log.captures(log_f.file_name().to_string_lossy().as_ref()) {
             chans.insert(
@@ -49,8 +50,8 @@ async fn main() -> anyhow::Result<()> {
     debug!("My logfiles: {log_files:?}");
     debug!("My chans: {chans:?}");
 
-    let re_nick = &Regex::new(&opts.re_nick)?;
-    let re_url = &Regex::new(&opts.re_url)?;
+    let re_nick = &Regex::new(&cfg.regex_nick)?;
+    let re_url = &Regex::new(&cfg.regex_url)?;
     let mut lmux = MuxedLines::new()?;
     let chan_unk = CHAN_UNK.to_owned();
     if opts.read_history {

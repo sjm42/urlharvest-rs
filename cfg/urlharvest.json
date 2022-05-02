@@ -1,0 +1,10 @@
+{
+    "irc_log_dir": "$HOME/irclogs/ircnet",
+    "db_file": "$HOME/urlharvest/data/urllog.db",
+    "template_dir": "$HOME/urlharvest/templates",
+    "html_dir": "$HOME/urlharvest/html",
+    "regex_log": "^(#\\S*)\\.log$",
+    "regex_nick": "^[:\\d]+\\s+[<\\*][%@\\~\\&\\+\\s]*([^>\\s]+)>?\\s+",
+    "regex_url": "(https?://[\\w/',\":;!%@=\\-\\.\\~\\?\\#\\[\\]\\{\\}\\$\\&\\(\\)\\*\\+]+[^\\s'\"\\)\\]\\}])",
+    "search_listen": "127.0.0.1:8080"
+}

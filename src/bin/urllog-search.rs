@@ -4,7 +4,7 @@ use handlebars::{to_json, Handlebars};
 use log::*;
 use regex::Regex;
 use rusqlite::Connection;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::net::SocketAddr;
 use structopt::StructOpt;
 use warp::Filter;
@@ -31,13 +31,14 @@ pub struct SearchParam {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsSearch::from_args();
+    let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts.c, "urllog search server");
+    start_pgm(&opts, "urllog search server");
+    let cfg = ConfigCommon::new(&opts)?;
     {
         // Just init the database if necessary,
         // and then drop the connection.
-        let _db = start_db(&opts.c)?;
+        let _db = start_db(&cfg)?;
     }
     let sql_search = format!(
         "select min(u.id), min(seen), max(seen), count(seen), \
@@ -51,8 +52,8 @@ async fn main() -> anyhow::Result<()> {
         group by url \
         order by max(seen) desc \
         limit {sz}",
-        table_url = opts.c.table_url,
-        table_meta = opts.c.table_meta,
+        table_url = TABLE_URL,
+        table_meta = TABLE_META,
         sz = RESULT_MAXSZ,
     );
 
@@ -64,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     let mut tpl_data = serde_json::value::Map::new();
     tpl_data.insert("cmd_search".into(), to_json("search"));
     let index_html = hb_reg.render(INDEX_NAME, &tpl_data)?;
-    let server_addr: SocketAddr = opts.listen;
+    let server_addr: SocketAddr = cfg.search_listen;
 
     // GET / -> index html
     let req_index = warp::get()
@@ -83,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
             {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
             }
-            match search(&opts.c.db_file, &sql_search, s) {
+            match search(&cfg.db_file, &sql_search, s) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
