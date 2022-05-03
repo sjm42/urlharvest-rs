@@ -45,17 +45,17 @@ async fn main() -> anyhow::Result<()> {
         tera.get_template_names().collect::<Vec<_>>().join(", ")
     );
 
-    let mut latest_ts: i64 = 0;
+    let mut latest_db: i64 = 0;
     loop {
         let db_ts = db_last_change(&mut db).await?;
-        if db_ts <= latest_ts {
+        if db_ts <= latest_db {
             trace!("Nothing new in DB.");
             thread::sleep(time::Duration::new(SLEEP_IDLE, 0));
             continue;
         }
-        latest_ts = db_ts;
+        latest_db = db_ts;
 
-        let ts_limit = db_ts - URL_EXPIRE;
+        let ts_limit = Utc::now().timestamp() - URL_EXPIRE;
         info!("Generating URL logs starting from {}", ts_limit.ts_long());
         let ctx = generate_ctx(&mut db, ts_limit).await?;
         for template in tera.get_template_names() {
