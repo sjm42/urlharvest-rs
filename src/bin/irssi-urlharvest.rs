@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                     IrcCtx {
                         ts: current_ts.timestamp(),
                         chan: chan.to_owned(),
-                        msg: msg,
+                        msg,
                     },
                 )
                 .await?;

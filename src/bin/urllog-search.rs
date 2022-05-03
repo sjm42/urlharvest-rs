@@ -1,12 +1,14 @@
 // urllog-search.rs
 
+use futures::TryStreamExt;
 use handlebars::{to_json, Handlebars};
 use log::*;
 use regex::Regex;
 use serde::Deserialize;
+use sqlx::{Connection, SqliteConnection};
 use std::net::SocketAddr;
 use structopt::StructOpt;
-use warp::Filter;
+use warp::Filter; // provides `try_next`
 
 use urlharvest::*;
 
@@ -14,7 +16,7 @@ const INDEX_PATH: &str = "$HOME/urllog/templates2/search.html.hbs";
 const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
-const RESULT_MAXSZ: usize = 100;
+const RESULT_MAXSZ: usize = 255;
 const DEFAULT_CAP: usize = 65536;
 
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
@@ -28,6 +30,18 @@ pub struct SearchParam {
     title: String,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct DbRead {
+    id: i64,
+    seen_first: i64,
+    seen_last: i64,
+    seen_count: i64,
+    channels: String,
+    nicks: String,
+    url: String,
+    title: String,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
@@ -35,16 +49,17 @@ async fn main() -> anyhow::Result<()> {
     start_pgm(&opts, "urllog_search");
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
+    debug!("Config:\n{:#?}", &cfg);
+
     {
         // Just init the database if necessary,
         // and then drop the connection.
         let _db = start_db(&cfg).await?;
     }
 
-    /*
     let sql_search = format!(
-        "select min(u.id), min(seen), max(seen), count(seen), \
-        group_concat(channel, ' '), group_concat(nick, ' '),
+        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+        group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks,
         url, {table_meta}.title from {table_url} as u \
         inner join {table_meta} on {table_meta}.url_id = u.id \
         where lower(channel) like ? \
@@ -86,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
             {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
             }
-            match search(&cfg.db_file, &sql_search, s) {
+            match futures::executor::block_on(search(&cfg.db_file, &sql_search, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
@@ -94,11 +109,10 @@ async fn main() -> anyhow::Result<()> {
 
     let req_routes = req_search.or(req_index);
     warp::serve(req_routes).run(server_addr).await;
-     */
+
     Ok(())
 }
 
-/*
 fn my_response<S1, S2>(
     resp_type: S1,
     resp_body: S2,
@@ -113,7 +127,7 @@ where
         .body(resp_body.as_ref().into())
 }
 
-fn search<S1, S2>(db: S1, sql: S2, srch: SearchParam) -> anyhow::Result<String>
+async fn search<S1, S2>(db: S1, sql: S2, srch: SearchParam) -> anyhow::Result<String>
 where
     S1: AsRef<str>,
     S2: AsRef<str>,
@@ -139,30 +153,32 @@ where
   </tr>"#,
     );
 
-    let sqc = Connection::open(db.as_ref())?;
-    {
-        let mut st_s = sqc.prepare(sql.as_ref())?;
-        let mut rows = st_s.query(&[&chan, &nick, &url, &title])?;
-        while let Some(row) = rows.next()? {
-            let id = row.get::<usize, i64>(0)?;
-            let first_seen = row.get::<usize, i64>(1)?.ts_y_short();
-            let last_seen = row.get::<usize, i64>(2)?.ts_short();
-            let num_seen = row.get::<usize, u64>(3)?;
-            let chans = row.get::<usize, String>(4)?.esc_ltgt().sort_dedup_br();
-            let nicks = row.get::<usize, String>(5)?.esc_ltgt().sort_dedup_br();
-            let url = row.get::<usize, String>(6)?.esc_quot();
-            let title = row.get::<usize, String>(7)?.esc_ltgt();
+    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
+    let mut st_s = sqlx::query_as::<_, DbRead>(sql.as_ref())
+        .bind(&chan)
+        .bind(&nick)
+        .bind(&url)
+        .bind(&title)
+        .fetch(&mut dbc);
+    while let Some(row) = st_s.try_next().await? {
+        let id = row.id;
+        let first_seen = row.seen_first.ts_y_short();
+        let last_seen = row.seen_last.ts_short();
+        let num_seen = row.seen_count;
+        let chans = row.channels.esc_ltgt().sort_dedup_br();
+        let nicks = row.nicks.esc_ltgt().sort_dedup_br();
+        let url = row.url.esc_quot();
+        let title = row.title.esc_ltgt();
 
-            html.push_str(&format!(
-                "<td>{id}</td><td>{first_seen}</td><td>{last_seen}</td><td>{num_seen}</td>\n\
+        html.push_str(&format!(
+            "<td>{id}</td><td>{first_seen}</td><td>{last_seen}</td><td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
-            ));
-        }
+        ));
     }
-    let _ = sqc.close();
+
     html.push_str("</table>\n");
     Ok(html)
 }
- */
+
 // EOF

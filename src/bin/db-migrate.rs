@@ -1,11 +1,9 @@
 // db-migrate.rs
 
+use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::{Connection, Executor, SqliteConnection};
 use structopt::StructOpt;
-// provides `try_next`
-use futures::TryStreamExt;
-
 use urlharvest::*;
 
 const TX_SZ: usize = 1024;
@@ -29,7 +27,8 @@ struct DbRead {
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "URL harvester");
+    start_pgm(&opts, "db_migrate");
+    info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 

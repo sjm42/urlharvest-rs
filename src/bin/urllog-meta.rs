@@ -1,11 +1,10 @@
 // urllog-meta.rs
 
+use futures::TryStreamExt;
 use log::*;
 use std::{thread, time};
 use structopt::StructOpt;
-use webpage::{Webpage, WebpageOptions};
-// provides `try_next`
-use futures::TryStreamExt;
+use webpage::{Webpage, WebpageOptions}; // provides `try_next`
 
 use urlharvest::*;
 
@@ -139,9 +138,9 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url: &str) -> anyhow::Resu
         db,
         &MetaCtx {
             url_id,
-            lang: lang,
-            title: title,
-            desc: desc,
+            lang,
+            title,
+            desc,
         },
     )
     .await?;
