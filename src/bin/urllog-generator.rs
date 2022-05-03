@@ -55,9 +55,16 @@ async fn main() -> anyhow::Result<()> {
         }
         latest_db = db_ts;
 
-        let ts_limit = Utc::now().timestamp() - URL_EXPIRE;
+        let mut now = Utc::now();
+        let ts_limit = now.timestamp() - URL_EXPIRE;
         info!("Generating URL logs starting from {}", ts_limit.ts_long());
         let ctx = generate_ctx(&mut db, ts_limit).await?;
+        info!(
+            "Database read took {} ms.",
+            Utc::now().signed_duration_since(now).num_milliseconds()
+        );
+
+        now = Utc::now();
         for template in tera.get_template_names() {
             let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
             let filename_out = format!("{}/{}", &cfg.html_dir, &template[0..cut_idx]);
@@ -71,6 +78,10 @@ async fn main() -> anyhow::Result<()> {
             fs::write(&filename_tmp, &template_output)?;
             fs::rename(&filename_tmp, &filename_out)?;
         }
+        info!(
+            "Template rendering took {} ms.",
+            Utc::now().signed_duration_since(now).num_milliseconds()
+        );
         thread::sleep(time::Duration::new(SLEEP_BUSY, 0));
     }
 }
