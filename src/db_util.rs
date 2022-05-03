@@ -81,13 +81,14 @@ pub async fn db_mark_change(db: &mut DbCtx) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
+pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<u64> {
     let sql_i = format!(
         "insert into {table} (id, seen, channel, nick, url) \
         values (null, ?, ?, ?, ?)",
         table = TABLE_URL
     );
 
+    let mut rowcnt = 0;
     let mut retry = 0;
     while retry < RETRY_CNT {
         match sqlx::query(&sql_i)
@@ -98,9 +99,10 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
             .execute(&mut db.dbc)
             .await
         {
-            Ok(n) => {
-                info!("Inserted {n:#?} row");
+            Ok(res) => {
+                info!("Insert result: {res:#?}");
                 retry = 0;
+                rowcnt = res.rows_affected();
                 break;
             }
             Err(e) => {
@@ -117,16 +119,16 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
     if retry > 0 {
         error!("GAVE UP after {RETRY_CNT} retries.");
     }
-    Ok(())
+    Ok(rowcnt)
 }
 
-pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<()> {
+pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<u64> {
     let sql_i = format!(
         "insert into {table_meta} (id, url_id, lang, title, desc) \
         values (null, ?, ?, ?, ?)",
         table_meta = TABLE_META
     );
-    sqlx::query(&sql_i)
+    let res = sqlx::query(&sql_i)
         .bind(&m.url_id)
         .bind(&m.lang)
         .bind(&m.title)
@@ -137,6 +139,6 @@ pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<()> {
     if db.update_change {
         db_mark_change(db).await?;
     }
-    Ok(())
+    Ok(res.rows_affected())
 }
 // EOF

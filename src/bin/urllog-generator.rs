@@ -142,7 +142,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
                 i_row += 1;
             }
         }
-        debug!("Read {i_row} rows.");
+        info!("Got {i_row} rows.");
         ctx.insert("n_rows", &i_row);
         ctx.insert("id", &arr_id);
         ctx.insert("first_seen", &arr_first_seen);
@@ -181,7 +181,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
                 i_uniq_row += 1;
             }
         }
-        debug!("Read {i_uniq_row} uniq rows.");
+        info!("Got {i_uniq_row} uniq rows.");
         ctx.insert("n_uniq_rows", &i_uniq_row);
         ctx.insert("uniq_id", &uniq_id);
         ctx.insert("uniq_first_seen", &uniq_first_seen);

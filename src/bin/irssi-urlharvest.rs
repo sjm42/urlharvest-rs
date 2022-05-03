@@ -226,16 +226,19 @@ async fn handle_ircmsg(
     for url_cap in re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
         info!("Detected url: {chan} {nick} {url}", chan = ctx.chan);
-        db_add_url(
-            db,
-            &UrlCtx {
-                ts: ctx.ts,
-                chan: ctx.chan.to_string(),
-                nick: nick.to_owned(),
-                url: url.to_owned(),
-            },
-        )
-        .await?;
+        info!(
+            "Inserted {} row(s)",
+            db_add_url(
+                db,
+                &UrlCtx {
+                    ts: ctx.ts,
+                    chan: ctx.chan.to_string(),
+                    nick: nick.to_owned(),
+                    url: url.to_owned(),
+                },
+            )
+            .await?
+        );
     }
     Ok(())
 }

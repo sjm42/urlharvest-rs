@@ -134,17 +134,19 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url: &str) -> anyhow::Resu
         }
     }
     info!("URL metadata:\nid: {url_id}\nurl: {url}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
-    db_add_meta(
-        db,
-        &MetaCtx {
-            url_id,
-            lang,
-            title,
-            desc,
-        },
-    )
-    .await?;
-    info!("Inserted row.");
+    info!(
+        "Inserted {} row(s)",
+        db_add_meta(
+            db,
+            &MetaCtx {
+                url_id,
+                lang,
+                title,
+                desc,
+            },
+        )
+        .await?
+    );
     Ok(())
 }
 // EOF
