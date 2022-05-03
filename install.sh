@@ -6,7 +6,7 @@ set -e
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-tgt=$HOME/urllog
+tgt=$HOME/urlharvest
 
 mkdir -p $tgt
 cd target/release
