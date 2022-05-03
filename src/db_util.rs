@@ -123,7 +123,7 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<()> {
 pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<()> {
     let sql_i = format!(
         "insert into {table_meta} (id, url_id, lang, title, desc) \
-        values (null, :ur, :la, :ti, :de)",
+        values (null, ?, ?, ?, ?)",
         table_meta = TABLE_META
     );
     sqlx::query(&sql_i)
