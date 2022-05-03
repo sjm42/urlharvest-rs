@@ -12,7 +12,6 @@ use warp::Filter; // provides `try_next`
 
 use urlharvest::*;
 
-const INDEX_PATH: &str = "$HOME/urllog/templates2/search.html.hbs";
 const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
@@ -75,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let re_srch = Regex::new(RE_SEARCH)?;
-    let index_path = shellexpand::full(INDEX_PATH)?.into_owned();
+    let index_path = cfg.search_template.clone();
 
     let mut hb_reg = Handlebars::new();
     hb_reg.register_template_file(INDEX_NAME, &index_path)?;
@@ -180,5 +179,4 @@ where
     html.push_str("</table>\n");
     Ok(html)
 }
-
 // EOF
