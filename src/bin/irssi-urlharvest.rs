@@ -226,13 +226,13 @@ async fn handle_ircmsg(
         None => NICK_UNK.into(),
     };
 
-    for url_cap in re_url.captures_iter(ctx.msg.as_ref()) {
+    'outer: for url_cap in re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
         info!("Detected url: {chan} {nick} {url}", chan = ctx.chan);
         for b in &cfg.url_blacklist {
             if url.starts_with(b) {
                 info!("Blacklilsted URL.");
-                continue;
+                continue 'outer;
             }
         }
         info!(
