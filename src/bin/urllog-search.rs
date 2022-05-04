@@ -15,7 +15,6 @@ use urlharvest::*;
 const INDEX_NAME: &str = "index";
 const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
-const RESULT_MAXSZ: usize = 255;
 const DEFAULT_CAP: usize = 65536;
 
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
@@ -56,9 +55,9 @@ async fn main() -> anyhow::Result<()> {
         let _db = start_db(&cfg).await?;
     }
 
-    let sql_search = format!(
-        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
-        group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks,
+    let sql_search =
+       "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+        group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
         url, url_meta.title from url as u \
         inner join url_meta on url_meta.url_id = u.id \
         where lower(channel) like ? \
@@ -67,8 +66,7 @@ async fn main() -> anyhow::Result<()> {
         and lower(url_meta.title) like ? \
         group by url \
         order by max(seen) desc \
-        limit 255",
-    );
+        limit 255";
 
     let re_srch = Regex::new(RE_SEARCH)?;
     let index_path = cfg.search_template.clone();
@@ -97,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
             {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
             }
-            match futures::executor::block_on(search(&cfg.db_file, &sql_search, s)) {
+            match futures::executor::block_on(search(&cfg.db_file, sql_search, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }

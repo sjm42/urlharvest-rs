@@ -108,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 handle_ircmsg(
+                    &cfg,
                     &mut db,
                     &re_nick,
                     &re_url,
@@ -144,6 +145,7 @@ async fn main() -> anyhow::Result<()> {
         let msg = msg_line.line();
 
         handle_ircmsg(
+            &cfg,
             &mut db,
             &re_nick,
             &re_url,
@@ -212,6 +214,7 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
 }
 
 async fn handle_ircmsg(
+    cfg: &ConfigCommon,
     db: &mut DbCtx,
     re_nick: &Regex,
     re_url: &Regex,
@@ -226,6 +229,12 @@ async fn handle_ircmsg(
     for url_cap in re_url.captures_iter(ctx.msg.as_ref()) {
         let url = &url_cap[1];
         info!("Detected url: {chan} {nick} {url}", chan = ctx.chan);
+        for b in &cfg.url_blacklist {
+            if url.starts_with(b) {
+                info!("Blacklilsted URL.");
+                continue;
+            }
+        }
         info!(
             "Inserted {} row(s)",
             db_add_url(

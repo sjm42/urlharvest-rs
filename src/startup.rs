@@ -52,6 +52,7 @@ pub struct ConfigCommon {
     pub regex_url: String,
     pub search_listen: SocketAddr,
     pub search_template: String,
+    pub url_blacklist: Vec<String>,
 }
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
