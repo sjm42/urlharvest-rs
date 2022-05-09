@@ -55,7 +55,7 @@
         {% for id_i in id -%}
         {% if channel[loop.index0] == "#networker" -%}
         <tr>
-            {% if seen_cnt[loop.index0] > 1 -%}
+            {% if seen_cnt[loop.index0] != "1" -%}
             <td>{{id_i}}</td>
             <td><b>{{seen_first[loop.index0]}}</b></td>
             <td>{{seen_last[loop.index0]}}</td>

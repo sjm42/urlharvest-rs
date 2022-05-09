@@ -57,7 +57,7 @@
         </tr>
         {% for id_i in uniq_id -%}
         <tr>
-            {% if uniq_seen_cnt[loop.index0] > 1 -%}
+            {% if uniq_seen_cnt[loop.index0] != "1" -%}
             <td>{{id_i}}</td>
             <td><b>{{uniq_seen_first[loop.index0]}}</b></td>
             <td>{{uniq_seen_last[loop.index0]}}</td>
