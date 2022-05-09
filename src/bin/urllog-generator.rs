@@ -1,10 +1,13 @@
 // urllog-generator.rs
 
+#![allow(non_camel_case_types)]
+
 use anyhow::{anyhow, bail};
 use chrono::*;
+use enum_iterator::IntoEnumIterator;
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
-use std::{fs, thread, time};
+use std::{collections::HashMap, fmt, fs, thread, time};
 use structopt::StructOpt;
 use tera::Tera;
 
@@ -12,7 +15,7 @@ use urlharvest::*;
 
 // A week in seconds
 const URL_EXPIRE: i64 = 7 * 24 * 3600;
-const VEC_SZ: usize = 1024;
+const VEC_SZ: usize = 4096;
 const TPL_SUFFIX: &str = ".tera";
 const SLEEP_IDLE: u64 = 10;
 const SLEEP_BUSY: u64 = 2;
@@ -91,16 +94,41 @@ struct DbRead {
     id: i64,
     seen_first: i64,
     seen_last: i64,
-    seen_count: i64,
+    seen_cnt: i64,
     channel: String,
     nick: String,
     url: String,
     title: String,
 }
 
+#[derive(Debug, Eq, Hash, IntoEnumIterator, PartialEq)]
+enum CtxData {
+    id,
+    seen_first,
+    seen_last,
+    seen_cnt,
+    channel,
+    nick,
+    url,
+    title,
+    uniq_id,
+    uniq_seen_first,
+    uniq_seen_last,
+    uniq_seen_cnt,
+    uniq_channel,
+    uniq_nick,
+    uniq_url,
+    uniq_title,
+}
+impl fmt::Display for CtxData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("{:?}", self))
+    }
+}
+
 async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let sql_url = format!(
-        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
           channel, nick, url, {table_meta}.title \
         from {table_url} as u \
         inner join {table_meta} on {table_meta}.url_id = u.id \
@@ -111,7 +139,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
         table_meta = TABLE_META
     );
     let sql_uniq = format!(
-        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
         group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
         url, {table_meta}.title \
         from {table_url} as u \
@@ -123,86 +151,92 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
         table_meta = TABLE_META
     );
 
+    let mut data = HashMap::with_capacity(16);
+    for k in CtxData::into_enum_iter() {
+        let v: Vec<String> = Vec::with_capacity(VEC_SZ);
+        data.insert(k, v);
+    }
+
     let mut ctx = tera::Context::new();
     ctx.insert("last_change", &Utc::now().timestamp().ts_long());
     {
-        let mut arr_id = Vec::with_capacity(VEC_SZ);
-        let mut arr_first_seen = Vec::with_capacity(VEC_SZ);
-        let mut arr_last_seen = Vec::with_capacity(VEC_SZ);
-        let mut arr_num_seen = Vec::with_capacity(VEC_SZ);
-        let mut arr_channel = Vec::with_capacity(VEC_SZ);
-        let mut arr_nick = Vec::with_capacity(VEC_SZ);
-        let mut arr_url = Vec::with_capacity(VEC_SZ);
-        let mut arr_title = Vec::with_capacity(VEC_SZ);
-
-        let mut i_row: usize = 0;
+        let mut n_rows: usize = 0;
         {
             let mut st_url = sqlx::query_as::<_, DbRead>(&sql_url)
                 .bind(ts_limit)
                 .fetch(&mut db.dbc);
 
             while let Some(row) = st_url.try_next().await? {
-                arr_id.push(row.id);
-                arr_first_seen.push(row.seen_first.ts_y_short());
-                arr_last_seen.push(row.seen_last.ts_short());
-                arr_num_seen.push(row.seen_count);
-                arr_channel.push(row.channel.esc_ltgt());
-                arr_nick.push(row.nick.esc_ltgt());
-                arr_url.push(row.url.esc_quot());
-                arr_title.push(row.title.esc_ltgt());
-                i_row += 1;
+                data.get_mut(&CtxData::id).unwrap().push(row.id.to_string());
+                data.get_mut(&CtxData::seen_first)
+                    .unwrap()
+                    .push(row.seen_first.ts_y_short());
+                data.get_mut(&CtxData::seen_last)
+                    .unwrap()
+                    .push(row.seen_last.ts_short());
+                data.get_mut(&CtxData::seen_cnt)
+                    .unwrap()
+                    .push(row.seen_cnt.to_string());
+                data.get_mut(&CtxData::channel)
+                    .unwrap()
+                    .push(row.channel.esc_ltgt());
+                data.get_mut(&CtxData::nick)
+                    .unwrap()
+                    .push(row.nick.esc_ltgt());
+                data.get_mut(&CtxData::url)
+                    .unwrap()
+                    .push(row.url.esc_quot());
+                data.get_mut(&CtxData::title)
+                    .unwrap()
+                    .push(row.title.esc_ltgt());
+                n_rows += 1;
             }
         }
-        info!("Got {i_row} rows.");
-        ctx.insert("n_rows", &i_row);
-        ctx.insert("id", &arr_id);
-        ctx.insert("first_seen", &arr_first_seen);
-        ctx.insert("last_seen", &arr_last_seen);
-        ctx.insert("num_seen", &arr_num_seen);
-        ctx.insert("channel", &arr_channel);
-        ctx.insert("nick", &arr_nick);
-        ctx.insert("url", &arr_url);
-        ctx.insert("title", &arr_title);
+        info!("Got {n_rows} rows.");
+        ctx.insert("n_rows", &n_rows);
     }
     {
-        let mut uniq_id = Vec::with_capacity(VEC_SZ);
-        let mut uniq_first_seen = Vec::with_capacity(VEC_SZ);
-        let mut uniq_last_seen = Vec::with_capacity(VEC_SZ);
-        let mut uniq_num_seen = Vec::with_capacity(VEC_SZ);
-        let mut uniq_channel = Vec::with_capacity(VEC_SZ);
-        let mut uniq_nick = Vec::with_capacity(VEC_SZ);
-        let mut uniq_url = Vec::with_capacity(VEC_SZ);
-        let mut uniq_title = Vec::with_capacity(VEC_SZ);
-
-        let mut i_uniq_row: usize = 0;
+        let mut uniq_n_rows: usize = 0;
         {
             let mut st_uniq = sqlx::query_as::<_, DbRead>(&sql_uniq)
                 .bind(ts_limit)
                 .fetch(&mut db.dbc);
 
             while let Some(row) = st_uniq.try_next().await? {
-                uniq_id.push(row.id);
-                uniq_first_seen.push(row.seen_first.ts_y_short());
-                uniq_last_seen.push(row.seen_last.ts_short());
-                uniq_num_seen.push(row.seen_count);
-                uniq_channel.push(row.channel.esc_ltgt().sort_dedup_br());
-                uniq_nick.push(row.nick.esc_ltgt().sort_dedup_br());
-                uniq_url.push(row.url.esc_quot());
-                uniq_title.push(row.title.esc_ltgt());
-                i_uniq_row += 1;
+                data.get_mut(&CtxData::uniq_id)
+                    .unwrap()
+                    .push(row.id.to_string());
+                data.get_mut(&CtxData::uniq_seen_first)
+                    .unwrap()
+                    .push(row.seen_first.ts_y_short());
+                data.get_mut(&CtxData::uniq_seen_last)
+                    .unwrap()
+                    .push(row.seen_last.ts_short());
+                data.get_mut(&CtxData::uniq_seen_cnt)
+                    .unwrap()
+                    .push(row.seen_cnt.to_string());
+                data.get_mut(&CtxData::uniq_channel)
+                    .unwrap()
+                    .push(row.channel.esc_ltgt().sort_dedup_br());
+                data.get_mut(&CtxData::uniq_nick)
+                    .unwrap()
+                    .push(row.nick.esc_ltgt().sort_dedup_br());
+                data.get_mut(&CtxData::uniq_url)
+                    .unwrap()
+                    .push(row.url.esc_quot());
+                data.get_mut(&CtxData::uniq_title)
+                    .unwrap()
+                    .push(row.title.esc_ltgt());
+                uniq_n_rows += 1;
             }
         }
-        info!("Got {i_uniq_row} uniq rows.");
-        ctx.insert("n_uniq_rows", &i_uniq_row);
-        ctx.insert("uniq_id", &uniq_id);
-        ctx.insert("uniq_first_seen", &uniq_first_seen);
-        ctx.insert("uniq_last_seen", &uniq_last_seen);
-        ctx.insert("uniq_num_seen", &uniq_num_seen);
-        ctx.insert("uniq_channel", &uniq_channel);
-        ctx.insert("uniq_nick", &uniq_nick);
-        ctx.insert("uniq_url", &uniq_url);
-        ctx.insert("uniq_title", &uniq_title);
+        info!("Got {uniq_n_rows} uniq rows.");
+        ctx.insert("uniq_n_rows", &uniq_n_rows);
     }
+    for k in CtxData::into_enum_iter() {
+        ctx.insert(k.to_string(), data.get(&k).unwrap());
+    }
+
     Ok(ctx)
 }
 // EOF

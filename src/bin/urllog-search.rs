@@ -6,6 +6,7 @@ use log::*;
 use regex::Regex;
 use serde::Deserialize;
 use sqlx::{Connection, SqliteConnection};
+use std::fmt::Write as _;
 use std::net::SocketAddr;
 use structopt::StructOpt;
 use warp::Filter; // provides `try_next`
@@ -149,26 +150,6 @@ where
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
 
-    /*
-       {
-           let mut kakka = sqlx::query_as!(DbRead,
-               "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
-               group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
-               url, url_meta.title from url as u \
-               inner join url_meta on url_meta.url_id = u.id \
-               where lower(channel) like ? \
-               and lower(nick) like ? \
-               and lower(url) like ? \
-               and lower(url_meta.title) like ? \
-               group by url \
-               order by max(seen) desc \
-               limit 255",
-               chan, nick, url, title
-           )
-           .fetch_all(&mut dbc).await?;
-       }
-    */
-
     let mut st_s = sqlx::query_as::<_, DbRead>(sql.as_ref())
         .bind(&chan)
         .bind(&nick)
@@ -185,11 +166,13 @@ where
         let url = row.url.esc_quot();
         let title = row.title.esc_ltgt();
 
-        html.push_str(&format!(
+        write!(
+            html,
             "<td>{id}</td><td>{first_seen}</td><td>{last_seen}</td><td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
-        ));
+        )
+        .unwrap();
     }
 
     html.push_str("</table>\n");

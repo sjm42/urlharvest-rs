@@ -47,23 +47,23 @@
     <table>
         <tr>
             <th>ID</th>
-            <th>First seen</th>
-            <th>Last seen</th>
-            <th>#</th>
+            <th>Seen First</th>
+            <th>Seen Last</th>
+            <th>Seen#</th>
             <th>URL</th>
         </tr>
         {% for id_i in uniq_id -%}
         <tr>
-            {% if uniq_num_seen[loop.index0] > 1 %}
+            {% if uniq_seen_cnt[loop.index0] > 1 %}
             <td>{{id_i}}</td>
-            <td><b>{{uniq_first_seen[loop.index0]}}</b></td>
-            <td>{{uniq_last_seen[loop.index0]}}</td>
-            <td><b>{{uniq_num_seen[loop.index0]}}</b></td>
+            <td><b>{{uniq_seen_first[loop.index0]}}</b></td>
+            <td>{{uniq_seen_last[loop.index0]}}</td>
+            <td><b>{{uniq_seen_cnt[loop.index0]}}</b></td>
             {% else %}
             <td>{{id_i}}</td>
-            <td>{{uniq_first_seen[loop.index0]}}</td>
-            <td>{{uniq_last_seen[loop.index0]}}</td>
-            <td>{{uniq_num_seen[loop.index0]}}</td>
+            <td>{{uniq_seen_first[loop.index0]}}</td>
+            <td>{{uniq_seen_last[loop.index0]}}</td>
+            <td>1</td>
             {% endif %}
             <td>{{uniq_title[loop.index0]}}<br>
                 <a href="{{uniq_url[loop.index0]}}">{{uniq_url[loop.index0]}}</a>
