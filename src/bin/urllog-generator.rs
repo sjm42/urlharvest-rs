@@ -127,14 +127,14 @@ impl fmt::Display for CtxData {
     }
 }
 
-const SQL_URL: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+const SQL_URL: &str = "select min(url.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
     channel, nick, url, url_meta.title from url \
     inner join url_meta on url_meta.url_id = url.id \
     group by channel, url \
     having max(seen) > ? \
     order by max(seen) desc";
 
-const SQL_UNIQ: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+const SQL_UNIQ: &str = "select min(url.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
     group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
     url, url_meta.title from url \
     inner join url_meta on url_meta.url_id = url.id \
