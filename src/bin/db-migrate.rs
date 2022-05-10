@@ -23,6 +23,10 @@ struct DbRead {
     pub desc: String,
 }
 
+const SQL_WRITE_URL: &str = "insert into url (id,seen,channel,nick,url) values (?,?,?,?,?)";
+const SQL_WRITE_META: &str =
+    "insert into url_meta (id,url_id,lang,title,desc) values (null,?,?,?,?)";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
@@ -45,11 +49,6 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut sql_read = sqlx::query_as::<_, DbRead>(&sql_url_read).fetch(&mut old_db);
 
-    let sql_write_url =
-        format!("insert into {TABLE_URL} (id,seen,channel,nick,url) values (?,?,?,?,?)");
-    let sql_write_meta =
-        format!("insert into {TABLE_META} (id,url_id,lang,title,desc) values (null,?,?,?,?)");
-
     new_db.dbc.execute("BEGIN").await?;
     while let Some(row) = sql_read.try_next().await? {
         i += 1;
@@ -59,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             new_db.dbc.execute("COMMIT").await?;
             new_db.dbc.execute("BEGIN").await?;
         }
-        sqlx::query(&sql_write_url)
+        sqlx::query(SQL_WRITE_URL)
             .bind(row.id)
             .bind(row.seen)
             .bind(&row.channel)
@@ -67,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
             .bind(&row.url)
             .execute(&mut new_db.dbc)
             .await?;
-        sqlx::query(&sql_write_meta)
+        sqlx::query(SQL_WRITE_META)
             .bind(row.id)
             .bind(&row.lang)
             .bind(&row.title)

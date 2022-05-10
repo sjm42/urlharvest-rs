@@ -8,10 +8,6 @@ use std::{thread, time};
 
 use crate::*;
 
-pub const TABLE_URL: &str = "url";
-pub const TABLE_CHANGED: &str = "url_changed";
-pub const TABLE_META: &str = "url_meta";
-
 const RETRY_CNT: usize = 5;
 const RETRY_SLEEP: u64 = 1;
 
@@ -65,33 +61,30 @@ pub async fn start_db(c: &ConfigCommon) -> anyhow::Result<DbCtx> {
     Ok(db)
 }
 
+const SQL_LAST_CHANGE: &str = "select last from url_changed limit 1";
 pub async fn db_last_change(db: &mut DbCtx) -> anyhow::Result<i64> {
-    let sql = format!("select last from {table} limit 1", table = TABLE_CHANGED);
-    let ts: (i64,) = sqlx::query_as(&sql).fetch_one(&mut db.dbc).await?;
+    let ts: (i64,) = sqlx::query_as(SQL_LAST_CHANGE)
+        .fetch_one(&mut db.dbc)
+        .await?;
     Ok(ts.0)
 }
 
+const SQL_UPDATE_CHANGE: &str = "update url_changed set last=?";
 pub async fn db_mark_change(db: &mut DbCtx) -> anyhow::Result<()> {
-    let sql = format!(
-        "update {table} set last={ts};",
-        table = TABLE_CHANGED,
-        ts = Utc::now().timestamp()
-    );
-    sqlx::query(&sql).execute(&mut db.dbc).await?;
+    sqlx::query(SQL_UPDATE_CHANGE)
+        .bind(Utc::now().timestamp())
+        .execute(&mut db.dbc)
+        .await?;
     Ok(())
 }
 
+const SQL_INSERT_URL: &str = "insert into url (id, seen, channel, nick, url) \
+    values (null, ?, ?, ?, ?)";
 pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<u64> {
-    let sql_i = format!(
-        "insert into {table} (id, seen, channel, nick, url) \
-        values (null, ?, ?, ?, ?)",
-        table = TABLE_URL
-    );
-
     let mut rowcnt = 0;
     let mut retry = 0;
     while retry < RETRY_CNT {
-        match sqlx::query(&sql_i)
+        match sqlx::query(SQL_INSERT_URL)
             .bind(ur.ts)
             .bind(&ur.chan)
             .bind(&ur.nick)
@@ -122,13 +115,10 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<u64> {
     Ok(rowcnt)
 }
 
+const SQL_INSERT_META: &str = "insert into url_meta (id, url_id, lang, title, desc) \
+        values (null, ?, ?, ?, ?)";
 pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<u64> {
-    let sql_i = format!(
-        "insert into {table_meta} (id, url_id, lang, title, desc) \
-        values (null, ?, ?, ?, ?)",
-        table_meta = TABLE_META
-    );
-    let res = sqlx::query(&sql_i)
+    let res = sqlx::query(SQL_INSERT_META)
         .bind(&m.url_id)
         .bind(&m.lang)
         .bind(&m.title)

@@ -54,16 +54,14 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     // in table {url_meta}
     let sql_nometa = format!(
         "select url.id, url.url, url.seen \
-        from {table_url} url \
+        from url \
         where not exists ( \
             select null \
-            from {table_meta} meta \
-            where url.id = meta.url_id \
+            from url_meta \
+            where url.id = url_meta.url_id \
         ) \
         order by seen {order} \
         limit {sz}",
-        table_url = TABLE_URL,
-        table_meta = TABLE_META,
         sz = BATCH_SIZE,
     );
 

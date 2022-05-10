@@ -127,31 +127,22 @@ impl fmt::Display for CtxData {
     }
 }
 
-async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
-    let sql_url = format!(
-        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
-          channel, nick, url, {table_meta}.title \
-        from {table_url} as u \
-        inner join {table_meta} on {table_meta}.url_id = u.id \
-        group by channel, url \
-        having max(seen) > ? \
-        order by max(seen) desc",
-        table_url = TABLE_URL,
-        table_meta = TABLE_META
-    );
-    let sql_uniq = format!(
-        "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
-        group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
-        url, {table_meta}.title \
-        from {table_url} as u \
-        inner join {table_meta} on {table_meta}.url_id = u.id \
-        group by url \
-        having max(seen) > ? \
-        order by max(seen) desc",
-        table_url = TABLE_URL,
-        table_meta = TABLE_META
-    );
+const SQL_URL: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+    channel, nick, url, url_meta.title from url \
+    inner join url_meta on url_meta.url_id = url.id \
+    group by channel, url \
+    having max(seen) > ? \
+    order by max(seen) desc";
 
+const SQL_UNIQ: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+    group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
+    url, url_meta.title from url \
+    inner join url_meta on url_meta.url_id = url.id \
+    group by url \
+    having max(seen) > ? \
+    order by max(seen) desc";
+
+async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let mut data = HashMap::with_capacity(16);
     for k in CtxData::into_enum_iter() {
         let v: Vec<String> = Vec::with_capacity(VEC_SZ);
@@ -163,7 +154,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
     {
         let mut n_rows: usize = 0;
         {
-            let mut st_url = sqlx::query_as::<_, DbRead>(&sql_url)
+            let mut st_url = sqlx::query_as::<_, DbRead>(SQL_URL)
                 .bind(ts_limit)
                 .fetch(&mut db.dbc);
 
@@ -199,7 +190,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
     {
         let mut uniq_n_rows: usize = 0;
         {
-            let mut st_uniq = sqlx::query_as::<_, DbRead>(&sql_uniq)
+            let mut st_uniq = sqlx::query_as::<_, DbRead>(SQL_UNIQ)
                 .bind(ts_limit)
                 .fetch(&mut db.dbc);
 
