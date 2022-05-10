@@ -120,6 +120,7 @@ enum CtxData {
     uniq_url,
     uniq_title,
 }
+// with this we get to_string() for free
 impl fmt::Display for CtxData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&format!("{:?}", self))
