@@ -56,19 +56,6 @@ async fn main() -> anyhow::Result<()> {
         let _db = start_db(&cfg).await?;
     }
 
-    let sql_search =
-       "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
-        group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
-        url, url_meta.title from url as u \
-        inner join url_meta on url_meta.url_id = u.id \
-        where lower(channel) like ? \
-        and lower(nick) like ? \
-        and lower(url) like ? \
-        and lower(url_meta.title) like ? \
-        group by url \
-        order by max(seen) desc \
-        limit 255";
-
     let re_srch = Regex::new(RE_SEARCH)?;
     let index_path = cfg.search_template.clone();
 
@@ -96,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
             {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
             }
-            match futures::executor::block_on(search(&cfg.db_file, sql_search, s)) {
+            match futures::executor::block_on(search(&cfg.db_file, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
@@ -122,10 +109,21 @@ where
         .body(resp_body.as_ref().into())
 }
 
-async fn search<S1, S2>(db: S1, sql: S2, srch: SearchParam) -> anyhow::Result<String>
+const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+    group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
+    url, url_meta.title from url as u \
+    inner join url_meta on url_meta.url_id = u.id \
+    where lower(channel) like ? \
+    and lower(nick) like ? \
+    and lower(url) like ? \
+    and lower(url_meta.title) like ? \
+    group by url \
+    order by max(seen) desc \
+    limit 255";
+
+async fn search<S1>(db: S1, srch: SearchParam) -> anyhow::Result<String>
 where
     S1: AsRef<str>,
-    S2: AsRef<str>,
 {
     info!("search({srch:?})");
     let chan = srch.chan.sql_search();
@@ -149,13 +147,13 @@ where
     );
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
-
-    let mut st_s = sqlx::query_as::<_, DbRead>(sql.as_ref())
+    let mut st_s = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
         .bind(&chan)
         .bind(&nick)
         .bind(&url)
         .bind(&title)
         .fetch(&mut dbc);
+
     while let Some(row) = st_s.try_next().await? {
         let id = row.id;
         let first_seen = row.seen_first.ts_y_short();
