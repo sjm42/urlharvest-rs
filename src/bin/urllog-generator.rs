@@ -162,7 +162,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
                 data.get_mut(&CtxData::id).unwrap().push(row.id.to_string());
                 data.get_mut(&CtxData::seen_first)
                     .unwrap()
-                    .push(row.seen_first.ts_y_short());
+                    .push(row.seen_first.ts_short_y());
                 data.get_mut(&CtxData::seen_last)
                     .unwrap()
                     .push(row.seen_last.ts_short());
@@ -200,7 +200,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
                     .push(row.id.to_string());
                 data.get_mut(&CtxData::uniq_seen_first)
                     .unwrap()
-                    .push(row.seen_first.ts_y_short());
+                    .push(row.seen_first.ts_short_y());
                 data.get_mut(&CtxData::uniq_seen_last)
                     .unwrap()
                     .push(row.seen_last.ts_short());

@@ -76,13 +76,10 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path::end())
         .and(warp::query::<SearchParam>())
         .map(move |s: SearchParam| {
-            if !re_srch.is_match(&s.chan)
-                || !re_srch.is_match(&s.nick)
-                || !re_srch.is_match(&s.url)
-                || !re_srch.is_match(&s.title)
-            {
-                return my_response(TEXT_PLAIN, "*** Illegal characters in query ***\n");
+            if !validate_search_param(&s, &re_srch) {
+                return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
             }
+
             match futures::executor::block_on(search(&cfg.db_file, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
@@ -93,6 +90,13 @@ async fn main() -> anyhow::Result<()> {
     warp::serve(req_routes).run(server_addr).await;
 
     Ok(())
+}
+
+fn validate_search_param(par: &SearchParam, re: &Regex) -> bool {
+    re.is_match(&par.chan)
+        && re.is_match(&par.nick)
+        && re.is_match(&par.url)
+        && re.is_match(&par.title)
 }
 
 fn my_response<S1, S2>(
@@ -156,7 +160,7 @@ where
 
     while let Some(row) = st_s.try_next().await? {
         let id = row.id;
-        let first_seen = row.seen_first.ts_y_short();
+        let first_seen = row.seen_first.ts_short_y();
         let last_seen = row.seen_last.ts_short();
         let num_seen = row.seen_count;
         let chans = row.channels.esc_ltgt().sort_dedup_br();

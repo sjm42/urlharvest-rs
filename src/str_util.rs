@@ -4,7 +4,7 @@ use chrono::*;
 
 const TS_FMT_LONG: &str = "%Y-%m-%d %H:%M:%S";
 const TS_FMT_SHORT: &str = "%b %d %H:%M";
-const TS_FMT_YEAR_SHORT: &str = "%Y %b %d %H:%M";
+const TS_FMT_SHORT_YEAR: &str = "%Y %b %d %H:%M";
 
 pub fn ts_fmt<S: AsRef<str>>(fmt: S, ts: i64) -> String {
     Local
@@ -16,7 +16,7 @@ pub fn ts_fmt<S: AsRef<str>>(fmt: S, ts: i64) -> String {
 pub trait TimeStampFormats {
     fn ts_long(self) -> String;
     fn ts_short(self) -> String;
-    fn ts_y_short(self) -> String;
+    fn ts_short_y(self) -> String;
 }
 impl TimeStampFormats for i64 {
     fn ts_long(self) -> String {
@@ -27,8 +27,8 @@ impl TimeStampFormats for i64 {
         ts_fmt(TS_FMT_SHORT, self)
     }
 
-    fn ts_y_short(self) -> String {
-        ts_fmt(TS_FMT_YEAR_SHORT, self)
+    fn ts_short_y(self) -> String {
+        ts_fmt(TS_FMT_SHORT_YEAR, self)
     }
 }
 

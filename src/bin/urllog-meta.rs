@@ -89,7 +89,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
                 }
             }
             if seen_i > 0 {
-                info!("*** PROCESSING *** at {}", &seen_i.ts_y_short());
+                info!("*** PROCESSING *** at {}", &seen_i.ts_short_y());
             }
             for i in 0..ids.len() {
                 if let Err(e) = update_meta(db, ids[i], &urls[i]).await {
