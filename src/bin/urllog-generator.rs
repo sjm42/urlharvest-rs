@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     start_pgm(&opts, "urllog_generator");
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
-    debug!("Config:\n{:#?}", &cfg);
+    debug!("Config:\n{cfg:#?}");
 
     let mut db = start_db(&cfg).await?;
 
@@ -69,8 +69,8 @@ async fn main() -> anyhow::Result<()> {
 
         now = Utc::now();
         for template in tera.get_template_names() {
-            let cut_idx = template.rfind(TPL_SUFFIX).unwrap_or(template.len());
-            let filename_out = format!("{}/{}", &cfg.html_dir, &template[0..cut_idx]);
+            let basename = template.strip_suffix(TPL_SUFFIX).unwrap_or(template);
+            let filename_out = format!("{}/{basename}", &cfg.html_dir);
             let filename_tmp = format!(
                 "{filename_out}.{}.{}.tmp",
                 std::process::id(),
@@ -123,7 +123,7 @@ enum CtxData {
 // with this we get to_string() for free
 impl fmt::Display for CtxData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&format!("{:?}", self))
+        f.write_str(&format!("{self:?}"))
     }
 }
 

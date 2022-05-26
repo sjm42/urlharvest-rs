@@ -13,7 +13,7 @@ const STR_ERR: &str = "(Error)";
 const BATCH_SIZE: usize = 10;
 const SLEEP_POLL: u64 = 2;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 enum ProcessMode {
     Backlog,
     Live,
