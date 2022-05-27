@@ -5,7 +5,7 @@
     "html_dir": "$HOME/urlharvest/html",
     "regex_log": "^(#\\S*)\\.log$",
     "regex_nick": "^[:\\d]+\\s+[<\\*][%@\\~\\&\\+\\s]*([^>\\s]+)>?\\s+",
-    "regex_url": "(https?://[\\w/',\":;!%@=\\-\\.\\~\\?\\#\\[\\]\\{\\}\\$\\&\\(\\)\\*\\+]+[^\\s'\"\\)\\]\\}])",
+    "regex_url": "(https?://[\\w/',\":;!%@=\\-\\.\\~\\?\\#\\[\\]\\{\\}\\$\\&\\(\\)\\*\\+]+[^\\s'\"\\]\\}])",
     "search_listen": "127.0.0.1:8080",
     "search_template": "$HOME/urlharvest/templates/search.html.hbs",
     "url_blacklist": [
