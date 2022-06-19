@@ -1,12 +1,14 @@
 // urllog-generator.rs
 
+#![feature(variant_count)]
+
 use anyhow::{anyhow, bail};
 use chrono::*;
 use enum_iterator::{all, Sequence};
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::FromRow;
-use std::{collections::HashMap, fmt, fs, thread, time};
+use std::{collections::HashMap, fmt, fs, mem, thread, time};
 use structopt::StructOpt;
 use tera::Tera;
 use urlharvest::*;
@@ -142,7 +144,8 @@ const SQL_UNIQ: &str = "select min(url.id) as id, min(seen) as seen_first, max(s
     order by max(seen) desc";
 
 async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
-    let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(16);
+    let mut data: HashMap<CtxData, Vec<String>> =
+        HashMap::with_capacity(mem::variant_count::<CtxData>());
     for k in all::<CtxData>() {
         let v: Vec<String> = Vec::with_capacity(VEC_SZ);
         data.insert(k, v);
