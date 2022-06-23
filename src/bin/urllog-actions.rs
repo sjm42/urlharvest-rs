@@ -217,9 +217,11 @@ where
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let db_res = sqlx::query(SQL_REMOVE).bind(&id).execute(&mut dbc).await?;
     let n_rows = db_res.rows_affected();
-    db_mark_change(&mut dbc).await?;
 
-    Ok(format!("Removed {n_rows} rows"))
+    let msg = format!("Removed {n_rows} rows");
+    info!("{msg}");
+    db_mark_change(&mut dbc).await?;
+    Ok(msg)
 }
 
 // EOF
