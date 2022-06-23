@@ -212,13 +212,11 @@ where
     let id = params.id.parse::<i64>().unwrap_or_default();
     info!("Remove id {id}");
 
-    /*
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let db_res = sqlx::query(SQL_REMOVE).bind(&id).execute(&mut dbc).await?;
     let n_rows = db_res.rows_affected();
-     db_mark_change(&mut dbc);
-    */
-    let n_rows = 1;
+    db_mark_change(&mut dbc).await?;
+
     Ok(format!("Removed {n_rows} rows"))
 }
 
