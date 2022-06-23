@@ -219,7 +219,7 @@ where
      db_mark_change(&mut dbc);
     */
     let n_rows = 1;
-    Ok(format!("Removed<br>\n{n_rows} rows"))
+    Ok(format!("Removed {n_rows} rows"))
 }
 
 // EOF
