@@ -78,6 +78,17 @@
       o.innerHTML = "Search results from " + Date() + "<br>" + html + "<br>";
     }
   }
+  function remove_url(id) {
+    var o = document.getElementById("removed_" + id);
+    o.innerHTML = "wait...";
+    const url = "/url2/search/remove?id=" + id;
+    const Http = new XMLHttpRequest();
+    Http.open("GET", url, false);
+    Http.onreadystatechange = (e) => {
+      o.innerHTML = Http.responseText;
+    }
+    Http.send();
+  }
 </script>
 
 </html>

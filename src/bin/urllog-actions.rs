@@ -179,7 +179,9 @@ where
 
         write!(
             html,
-            "<td>{id}</td><td>{first_seen}</td><td>{last_seen}</td><td>{num_seen}</td>\n\
+            "<td>{id}<br><input type=\"submit\" onclick=\"remove_url({id})\" value=\"remove\"></td>\n\
+            <td>{first_seen}<br><div id=\"removed_{id}\"></div></td>\n\
+            <td>{last_seen}</td><td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
         )
