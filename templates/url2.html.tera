@@ -83,7 +83,7 @@
     function remove_url(id) {
         var o = document.getElementById("removed_" + id);
         o.innerHTML = "wait...";
-        var url = "/remove/?id=" + id;
+        var url = "/url2/search/remove?id=" + id;
         const Http = new XMLHttpRequest();
         Http.open("GET", url, false);
         Http.onreadystatechange = (e) => {

@@ -70,10 +70,10 @@ pub async fn db_last_change(db: &mut DbCtx) -> anyhow::Result<i64> {
 }
 
 const SQL_UPDATE_CHANGE: &str = "update url_changed set last=?";
-pub async fn db_mark_change(db: &mut DbCtx) -> anyhow::Result<()> {
+pub async fn db_mark_change(dbc: &mut SqliteConnection) -> anyhow::Result<()> {
     sqlx::query(SQL_UPDATE_CHANGE)
         .bind(Utc::now().timestamp())
-        .execute(&mut db.dbc)
+        .execute(dbc)
         .await?;
     Ok(())
 }
@@ -107,7 +107,7 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<u64> {
         retry += 1;
     }
     if db.update_change {
-        db_mark_change(db).await?;
+        db_mark_change(&mut db.dbc).await?;
     }
     if retry > 0 {
         error!("GAVE UP after {RETRY_CNT} retries.");
@@ -127,7 +127,7 @@ pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<u64> {
         .await?;
 
     if db.update_change {
-        db_mark_change(db).await?;
+        db_mark_change(&mut db.dbc).await?;
     }
     Ok(res.rows_affected())
 }

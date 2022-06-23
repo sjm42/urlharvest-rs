@@ -28,7 +28,7 @@ const REQ_PATH_REMOVE: &str = "remove";
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "urllog_search");
+    start_pgm(&opts, "urllog_actions");
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
@@ -212,10 +212,13 @@ where
     let id = params.id.parse::<i64>().unwrap_or_default();
     info!("Remove id {id}");
 
+    /*
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let db_res = sqlx::query(SQL_REMOVE).bind(&id).execute(&mut dbc).await?;
     let n_rows = db_res.rows_affected();
-
+     db_mark_change(&mut dbc);
+    */
+    let n_rows = 1;
     Ok(format!("Removed<br>\n{n_rows} rows"))
 }
 
