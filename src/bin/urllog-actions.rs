@@ -13,33 +13,16 @@ use warp::Filter; // provides `try_next`
 
 use urlharvest::*;
 
-const INDEX_NAME: &str = "index";
-const REQ_PATH_SEARCH: &str = "search";
-const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
-const DEFAULT_CAP: usize = 65536;
-
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
 const TEXT_HTML: &str = "text/html; charset=utf-8";
 
-#[derive(Debug, Deserialize)]
-pub struct SearchParam {
-    chan: String,
-    nick: String,
-    url: String,
-    title: String,
-}
+const INDEX_NAME: &str = "index";
+const DEFAULT_REPLY_CAP: usize = 65536;
 
-#[derive(Debug, sqlx::FromRow)]
-struct DbRead {
-    id: i64,
-    seen_first: i64,
-    seen_last: i64,
-    seen_count: i64,
-    channels: String,
-    nicks: String,
-    url: String,
-    title: String,
-}
+const REQ_PATH_SEARCH: &str = "search";
+const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
+
+const REQ_PATH_REMOVE: &str = "remove";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,6 +54,8 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path::end())
         .map(move || my_response(TEXT_HTML, index_html.clone()));
 
+    let db1 = cfg.db_file.clone();
+    let db2 = cfg.db_file.clone();
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
@@ -80,23 +65,27 @@ async fn main() -> anyhow::Result<()> {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
             }
 
-            match futures::executor::block_on(search(&cfg.db_file, s)) {
+            match futures::executor::block_on(search(&db1, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
         });
 
-    let req_routes = req_search.or(req_index);
+    let req_remove = warp::get()
+        .and(warp::path(REQ_PATH_REMOVE))
+        .and(warp::path::end())
+        .and(warp::query::<RemoveParam>())
+        .map(
+            move |s: RemoveParam| match futures::executor::block_on(remove(&db2, s)) {
+                Ok(result) => my_response(TEXT_HTML, result),
+                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+            },
+        );
+
+    let req_routes = req_search.or(req_remove).or(req_index);
     warp::serve(req_routes).run(server_addr).await;
 
     Ok(())
-}
-
-fn validate_search_param(par: &SearchParam, re: &Regex) -> bool {
-    re.is_match(&par.chan)
-        && re.is_match(&par.nick)
-        && re.is_match(&par.url)
-        && re.is_match(&par.title)
 }
 
 fn my_response<S1, S2>(
@@ -113,6 +102,14 @@ where
         .body(resp_body.as_ref().into())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SearchParam {
+    chan: String,
+    nick: String,
+    url: String,
+    title: String,
+}
+
 const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
     group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
     url, url_meta.title from url as u \
@@ -125,18 +122,30 @@ const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(s
     order by max(seen) desc \
     limit 255";
 
-async fn search<S1>(db: S1, srch: SearchParam) -> anyhow::Result<String>
+#[derive(Debug, sqlx::FromRow)]
+struct DbRead {
+    id: i64,
+    seen_first: i64,
+    seen_last: i64,
+    seen_count: i64,
+    channels: String,
+    nicks: String,
+    url: String,
+    title: String,
+}
+
+async fn search<S1>(db: S1, params: SearchParam) -> anyhow::Result<String>
 where
     S1: AsRef<str>,
 {
-    info!("search({srch:?})");
-    let chan = srch.chan.sql_search();
-    let nick = srch.nick.sql_search();
-    let url = srch.url.sql_search();
-    let title = srch.title.sql_search();
+    info!("search({params:?})");
+    let chan = params.chan.sql_search();
+    let nick = params.nick.sql_search();
+    let url = params.url.sql_search();
+    let title = params.title.sql_search();
     info!("Search {chan} {nick} {url} {title}");
 
-    let mut html = String::with_capacity(DEFAULT_CAP);
+    let mut html = String::with_capacity(DEFAULT_REPLY_CAP);
     html.push_str(
         r#"<table>
   <tr>
@@ -180,4 +189,34 @@ where
     html.push_str("</table>\n");
     Ok(html)
 }
+
+fn validate_search_param(par: &SearchParam, re: &Regex) -> bool {
+    re.is_match(&par.chan)
+        && re.is_match(&par.nick)
+        && re.is_match(&par.url)
+        && re.is_match(&par.title)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RemoveParam {
+    id: String,
+}
+
+const SQL_REMOVE: &str = "delete from url where url in (select url from url where id=?)";
+
+async fn remove<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
+where
+    S1: AsRef<str>,
+{
+    info!("remove({params:?})");
+    let id = params.id.parse::<i64>().unwrap_or_default();
+    info!("Remove id {id}");
+
+    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
+    let db_res = sqlx::query(SQL_REMOVE).bind(&id).execute(&mut dbc).await?;
+    let n_rows = db_res.rows_affected();
+
+    Ok(format!("Removed<br>\n{n_rows} rows"))
+}
+
 // EOF

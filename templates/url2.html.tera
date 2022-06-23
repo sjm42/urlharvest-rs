@@ -56,18 +56,20 @@
             <th>Title, URL</th>
         </tr>
         {% for id_i in uniq_id -%}
+        {% if uniq_seen_cnt[loop.index0] != "1" -%}
+        {% set BB = "<b>" -%}
+            {% set BE = "</b>" -%}
+        {% else -%}
+        {% set BB = "" -%}
+        {% set BE = "" -%}
+        {% endif -%}
         <tr>
-            {% if uniq_seen_cnt[loop.index0] != "1" -%}
-            <td>{{id_i}}</td>
-            <td><b>{{uniq_seen_first[loop.index0]}}</b></td>
+            <td>{{id_i}}<br><input type="submit" onclick="remove_url({{id_i}})" value="remove"></td>
+            <td>{{BB}}{{uniq_seen_first[loop.index0]}}{{BE}}<br>
+                <div id="removed_{{id_i}}"></div>
+            </td>
             <td>{{uniq_seen_last[loop.index0]}}</td>
-            <td><b>{{uniq_seen_cnt[loop.index0]}}</b></td>
-            {% else -%}
-            <td>{{id_i}}</td>
-            <td>{{uniq_seen_first[loop.index0]}}</td>
-            <td>{{uniq_seen_last[loop.index0]}}</td>
-            <td>1</td>
-            {% endif -%}
+            <td>{{BB}}{{uniq_seen_cnt[loop.index0]}}{{BE}}</td>
             <td>{{uniq_channel[loop.index0]}}</td>
             <td>{{uniq_nick[loop.index0]}}</td>
             <td>{{uniq_title[loop.index0]}}<br>
@@ -77,5 +79,18 @@
         {% endfor -%}
     </table>
 </body>
+<script>
+    function remove_url(id) {
+        var o = document.getElementById("removed_" + id);
+        o.innerHTML = "wait...";
+        var url = "/remove/?id=" + id;
+        const Http = new XMLHttpRequest();
+        Http.open("GET", url, false);
+        Http.onreadystatechange = (e) => {
+            o.innerHTML = Http.responseText;
+        }
+        Http.send();
+    }
+</script>
 
 </html>
