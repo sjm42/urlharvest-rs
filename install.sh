@@ -10,7 +10,7 @@ tgt=$HOME/urlharvest/bin
 
 mkdir -p $tgt
 cd target/release
-rsync -var irssi-urlharvest urllog-meta urllog-generator urllog-search $tgt/
+rsync -var irssi-urlharvest urllog-meta urllog-generator urllog-actions $tgt/
 
 exit 0
 # EOF
