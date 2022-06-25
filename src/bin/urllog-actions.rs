@@ -245,7 +245,7 @@ where
     Ok(msg)
 }
 
-const SQL_REMOVE_META: &str = "delete from url_meta where url_id=?)";
+const SQL_REMOVE_META: &str = "delete from url_meta where url_id=?";
 
 async fn remove_meta<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
 where
