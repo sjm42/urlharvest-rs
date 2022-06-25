@@ -261,7 +261,7 @@ where
         .execute(&mut dbc)
         .await?;
 
-    let msg = format!("Refreshing");
+    let msg = "Refreshing".into();
     info!("{msg}");
     db_mark_change(&mut dbc).await?;
     Ok(msg)

@@ -4,6 +4,7 @@ use futures::TryStreamExt;
 use log::*;
 use std::{thread, time};
 use structopt::StructOpt;
+use url::Url;
 use webpage::{Webpage, WebpageOptions}; // provides `try_next`
 
 use urlharvest::*;
@@ -106,45 +107,52 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn update_meta(db: &mut DbCtx, url_id: i64, url: &str) -> anyhow::Result<()> {
-    let w_opt = WebpageOptions {
-        allow_insecure: true,
-        timeout: time::Duration::new(5, 0),
-        ..Default::default()
-    };
-    info!("Fetching URL {url}");
-    let lang: String;
-    let title: String;
-    let desc: String;
-    match Webpage::from_url(url, w_opt) {
-        Ok(pageinfo) => {
-            lang = pageinfo.html.language.unwrap_or_else(|| STR_NA.to_owned());
-            title = pageinfo.html.title.unwrap_or_else(|| STR_NA.to_owned());
-            desc = pageinfo
-                .html
-                .description
-                .unwrap_or_else(|| STR_NA.to_owned());
+pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Result<()> {
+    if let Ok(url) = Url::parse(url_s) {
+        // Now we should have a canonical url, IDN handled etc.
+        let url_c = String::from(url);
+
+        let w_opt = WebpageOptions {
+            allow_insecure: true,
+            timeout: time::Duration::new(5, 0),
+            ..Default::default()
+        };
+        info!("Fetching URL {url_c}");
+        let lang: String;
+        let title: String;
+        let desc: String;
+        match Webpage::from_url(&url_c, w_opt) {
+            Ok(pageinfo) => {
+                lang = pageinfo.html.language.unwrap_or_else(|| STR_NA.to_owned());
+                title = pageinfo.html.title.unwrap_or_else(|| STR_NA.to_owned());
+                desc = pageinfo
+                    .html
+                    .description
+                    .unwrap_or_else(|| STR_NA.to_owned());
+            }
+            Err(e) => {
+                lang = STR_ERR.into();
+                title = format!("(Error: {e:?})");
+                desc = STR_ERR.into();
+            }
         }
-        Err(e) => {
-            lang = STR_ERR.into();
-            title = format!("(Error: {e:?})");
-            desc = STR_ERR.into();
-        }
+        info!(
+            "URL metadata:\nid: {url_id}\nurl: {url_c}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",
+        );
+        info!(
+            "Inserted {} row(s)",
+            db_add_meta(
+                db,
+                &MetaCtx {
+                    url_id,
+                    lang,
+                    title,
+                    desc,
+                },
+            )
+            .await?
+        );
     }
-    info!("URL metadata:\nid: {url_id}\nurl: {url}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
-    info!(
-        "Inserted {} row(s)",
-        db_add_meta(
-            db,
-            &MetaCtx {
-                url_id,
-                lang,
-                title,
-                desc,
-            },
-        )
-        .await?
-    );
     Ok(())
 }
 // EOF
