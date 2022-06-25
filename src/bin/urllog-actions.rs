@@ -261,7 +261,6 @@ where
         .bind(&id)
         .execute(&mut dbc)
         .await?;
-    let n_rows = db_res.rows_affected();
 
     let msg = format!("Metadata refreshing");
     info!("{msg}");
