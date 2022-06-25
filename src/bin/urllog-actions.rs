@@ -257,7 +257,7 @@ where
     info!("Remove meta id {id}");
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
-    let db_res = sqlx::query(SQL_REMOVE_META)
+    let _db_res = sqlx::query(SQL_REMOVE_META)
         .bind(&id)
         .execute(&mut dbc)
         .await?;
