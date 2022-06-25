@@ -22,7 +22,8 @@ const DEFAULT_REPLY_CAP: usize = 65536;
 const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
 
-const REQ_PATH_REMOVE: &str = "remove";
+const REQ_PATH_REMOVE_URL: &str = "remove_url";
+const REQ_PATH_REMOVE_META: &str = "remove_meta";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -54,8 +55,7 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path::end())
         .map(move || my_response(TEXT_HTML, index_html.clone()));
 
-    let db1 = cfg.db_file.clone();
-    let db2 = cfg.db_file.clone();
+    let db_search = cfg.db_file.clone();
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
@@ -65,24 +65,40 @@ async fn main() -> anyhow::Result<()> {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
             }
 
-            match futures::executor::block_on(search(&db1, s)) {
+            match futures::executor::block_on(search(&db_search, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
         });
 
-    let req_remove = warp::get()
-        .and(warp::path(REQ_PATH_REMOVE))
+    let db_rm_url = cfg.db_file.clone();
+    let req_remove_url = warp::get()
+        .and(warp::path(REQ_PATH_REMOVE_URL))
         .and(warp::path::end())
         .and(warp::query::<RemoveParam>())
         .map(
-            move |s: RemoveParam| match futures::executor::block_on(remove(&db2, s)) {
+            move |s: RemoveParam| match futures::executor::block_on(remove_url(&db_rm_url, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             },
         );
 
-    let req_routes = req_search.or(req_remove).or(req_index);
+    let db_rm_meta = cfg.db_file.clone();
+    let req_remove_meta = warp::get()
+        .and(warp::path(REQ_PATH_REMOVE_META))
+        .and(warp::path::end())
+        .and(warp::query::<RemoveParam>())
+        .map(move |s: RemoveParam| {
+            match futures::executor::block_on(remove_meta(&db_rm_meta, s)) {
+                Ok(result) => my_response(TEXT_HTML, result),
+                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+            }
+        });
+
+    let req_routes = req_search
+        .or(req_remove_url)
+        .or(req_remove_meta)
+        .or(req_index);
     warp::serve(req_routes).run(server_addr).await;
 
     Ok(())
@@ -183,7 +199,9 @@ where
             <td>{first_seen}<br><div id=\"removed_{id}\"></div></td>\n\
             <td>{last_seen}</td><td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
-                <td>{title}<br>\n<a href=\"{url}\">{url}</a></td>\n</tr>\n",
+                <td><input type=\"submit\" onclick=\"remove_meta({id})\" value=\"update\">\n\
+                <div id=\"title_{id}\">{title}</div><br>\n\
+                <a href=\"{url}\">{url}</a></td>\n</tr>\n",
         )
         .unwrap();
     }
@@ -204,18 +222,44 @@ pub struct RemoveParam {
     id: String,
 }
 
-const SQL_REMOVE: &str = "delete from url where url in (select url from url where id=?)";
+const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id=?)";
 
-async fn remove<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
+async fn remove_url<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
 where
     S1: AsRef<str>,
 {
-    info!("remove({params:?})");
+    info!("remove_url({params:?})");
     let id = params.id.parse::<i64>().unwrap_or_default();
-    info!("Remove id {id}");
+    info!("Remove url id {id}");
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
-    let db_res = sqlx::query(SQL_REMOVE).bind(&id).execute(&mut dbc).await?;
+    let db_res = sqlx::query(SQL_REMOVE_URL)
+        .bind(&id)
+        .execute(&mut dbc)
+        .await?;
+    let n_rows = db_res.rows_affected();
+
+    let msg = format!("Removed {n_rows} rows");
+    info!("{msg}");
+    db_mark_change(&mut dbc).await?;
+    Ok(msg)
+}
+
+const SQL_REMOVE_META: &str = "delete from url_meta where url_id=?)";
+
+async fn remove_meta<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
+where
+    S1: AsRef<str>,
+{
+    info!("remove_meta({params:?})");
+    let id = params.id.parse::<i64>().unwrap_or_default();
+    info!("Remove meta id {id}");
+
+    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
+    let db_res = sqlx::query(SQL_REMOVE_META)
+        .bind(&id)
+        .execute(&mut dbc)
+        .await?;
     let n_rows = db_res.rows_affected();
 
     let msg = format!("Removed {n_rows} rows");

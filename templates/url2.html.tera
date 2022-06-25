@@ -72,7 +72,8 @@
             <td>{{BB}}{{uniq_seen_cnt[loop.index0]}}{{BE}}</td>
             <td>{{uniq_channel[loop.index0]}}</td>
             <td>{{uniq_nick[loop.index0]}}</td>
-            <td>{{uniq_title[loop.index0]}}<br>
+            <td><input type="submit" onclick="remove_meta({{id_i}})" value="update">
+                <div id="title_{{id_i}}">{{uniq_title[loop.index0]}}</div><br>
                 <a href="{{uniq_url[loop.index0]}}">{{uniq_url[loop.index0]}}</a>
             </td>
         </tr>
@@ -83,7 +84,18 @@
     function remove_url(id) {
         var o = document.getElementById("removed_" + id);
         o.innerHTML = "wait...";
-        var url = "/url2/search/remove?id=" + id;
+        var url = "/url2/search/remove_url?id=" + id;
+        const Http = new XMLHttpRequest();
+        Http.open("GET", url, false);
+        Http.onreadystatechange = (e) => {
+            o.innerHTML = Http.responseText;
+        }
+        Http.send();
+    }
+    function remove_meta(id) {
+        var o = document.getElementById("title_" + id);
+        o.innerHTML = "updating...";
+        var url = "/url2/search/remove_meta?id=" + id;
         const Http = new XMLHttpRequest();
         Http.open("GET", url, false);
         Http.onreadystatechange = (e) => {
