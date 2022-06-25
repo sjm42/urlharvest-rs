@@ -200,8 +200,7 @@ where
             <td>{last_seen}<br><div id=\"status_{id}\"></div></td>\n\
             <td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
-                <td><input type=\"submit\" onclick=\"remove_meta({id})\" value=\"update\">\n\
-                <div id=\"title_{id}\">{title}</div><br>\n\
+                <td>{title}<br>\n\
                 <a href=\"{url}\">{url}</a></td>\n</tr>\n",
         )
         .unwrap();
