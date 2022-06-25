@@ -65,17 +65,16 @@
         {% endif -%}
         <tr>
             <td>{{id_i}}<br><input type="submit" onclick="remove_url({{id_i}})" value="remove"></td>
-            <td>{{BB}}{{uniq_seen_first[loop.index0]}}{{BE}}<br>
-                <div id="removed_{{id_i}}"></div>
+            <td>{{BB}}{{uniq_seen_first[loop.index0]}}{{BE}}<br><input type="submit" onclick="remove_meta({{id_i}})"
+                    value="refresh"></td>
+            <td>{{uniq_seen_last[loop.index0]}}<br>
+                <div id="status_{{id_i}}"></div>
             </td>
-            <td>{{uniq_seen_last[loop.index0]}}</td>
             <td>{{BB}}{{uniq_seen_cnt[loop.index0]}}{{BE}}</td>
             <td>{{uniq_channel[loop.index0]}}</td>
             <td>{{uniq_nick[loop.index0]}}</td>
             <td>
-                <div id="title_{{id_i}}">
-                    {{uniq_title[loop.index0]}}</div><br>
-                <input type="submit" onclick="remove_meta({{id_i}})" value="update">
+                {{uniq_title[loop.index0]}}<br>
                 <a href="{{uniq_url[loop.index0]}}">{{uniq_url[loop.index0]}}</a>
             </td>
         </tr>
@@ -84,8 +83,8 @@
 </body>
 <script>
     function remove_url(id) {
-        var o = document.getElementById("removed_" + id);
-        o.innerHTML = "wait...";
+        var o = document.getElementById("status_" + id);
+        o.innerHTML = "removing...";
         var url = "/url2/search/remove_url?id=" + id;
         const Http = new XMLHttpRequest();
         Http.open("GET", url, false);
@@ -95,7 +94,7 @@
         Http.send();
     }
     function remove_meta(id) {
-        var o = document.getElementById("title_" + id);
+        var o = document.getElementById("status_" + id);
         o.innerHTML = "updating...";
         var url = "/url2/search/remove_meta?id=" + id;
         const Http = new XMLHttpRequest();

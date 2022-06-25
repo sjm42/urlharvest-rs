@@ -196,8 +196,9 @@ where
         write!(
             html,
             "<td>{id}<br><input type=\"submit\" onclick=\"remove_url({id})\" value=\"remove\"></td>\n\
-            <td>{first_seen}<br><div id=\"removed_{id}\"></div></td>\n\
-            <td>{last_seen}</td><td>{num_seen}</td>\n\
+            <td>{first_seen}<br><input type=\"submit\" onclick=\"remove_meta({id})\" value=\"refresh\"></td>\n\
+            <td>{last_seen}<br><div id=\"status_{id}\"></div></td>\n\
+            <td>{num_seen}</td>\n\
                 <td>{chans}</td><td>{nicks}</td>\n\
                 <td><input type=\"submit\" onclick=\"remove_meta({id})\" value=\"update\">\n\
                 <div id=\"title_{id}\">{title}</div><br>\n\
@@ -262,7 +263,7 @@ where
         .await?;
     let n_rows = db_res.rows_affected();
 
-    let msg = format!("Removed {n_rows} rows");
+    let msg = format!("Metadata refreshing");
     info!("{msg}");
     db_mark_change(&mut dbc).await?;
     Ok(msg)

@@ -79,8 +79,8 @@
     }
   }
   function remove_url(id) {
-    var o = document.getElementById("removed_" + id);
-    o.innerHTML = "wait...";
+    var o = document.getElementById("status_" + id);
+    o.innerHTML = "removing...";
     const url = "/url2/search/remove_url?id=" + id;
     const Http = new XMLHttpRequest();
     Http.open("GET", url, false);
@@ -90,7 +90,7 @@
     Http.send();
   }
   function remove_meta(id) {
-    var o = document.getElementById("title_" + id);
+    var o = document.getElementById("status_" + id);
     o.innerHTML = "updating...";
     var url = "/url2/search/remove_meta?id=" + id;
     const Http = new XMLHttpRequest();
