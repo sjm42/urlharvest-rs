@@ -72,8 +72,8 @@
             <td>{{BB}}{{uniq_seen_cnt[loop.index0]}}{{BE}}</td>
             <td>{{uniq_channel[loop.index0]}}</td>
             <td>{{uniq_nick[loop.index0]}}</td>
-            <td><input type="submit" onclick="remove_meta({{id_i}})" value="update">
-                <div id="title_{{id_i}}">{{uniq_title[loop.index0]}}</div><br>
+            <td><input type="submit" onclick="remove_meta({{id_i}})" value="update">&nbsp;<div id="title_{{id_i}}">
+                    {{uniq_title[loop.index0]}}</div><br>
                 <a href="{{uniq_url[loop.index0]}}">{{uniq_url[loop.index0]}}</a>
             </td>
         </tr>
