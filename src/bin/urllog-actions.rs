@@ -240,7 +240,7 @@ where
         .await?;
     let n_rows = db_res.rows_affected();
 
-    let msg = format!("Removed {n_rows} rows");
+    let msg = format!("Removed #{n_rows}");
     info!("{msg}");
     db_mark_change(&mut dbc).await?;
     Ok(msg)
@@ -262,7 +262,7 @@ where
         .execute(&mut dbc)
         .await?;
 
-    let msg = format!("Metadata refreshing");
+    let msg = format!("Refreshing");
     info!("{msg}");
     db_mark_change(&mut dbc).await?;
     Ok(msg)
