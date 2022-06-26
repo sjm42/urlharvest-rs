@@ -71,6 +71,9 @@ async fn main() -> anyhow::Result<()> {
     // Create Handlebars registry
     let mut hb_reg = Handlebars::new();
 
+    // We handle html escaping ourselves, so must avoid double escaping here
+    hb_reg.register_escape_fn(handlebars::no_escape);
+
     // We render index html statically and save it
     hb_reg.register_template_file(TPL_INDEX, &tpl_path_search_index)?;
     let mut tpl_data = serde_json::value::Map::new();
