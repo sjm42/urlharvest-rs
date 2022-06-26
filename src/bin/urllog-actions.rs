@@ -232,7 +232,7 @@ where
         .for_each(|(k, v)| {
             tpl_data_row.insert(k.to_string(), to_json(v));
         });
-        info!("Result row:\n{tpl_data_row:#?}");
+        // debug!("Result row:\n{tpl_data_row:#?}");
         html.push_str(&hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
     }
 
