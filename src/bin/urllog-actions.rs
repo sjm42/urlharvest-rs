@@ -2,12 +2,12 @@
 
 use futures::TryStreamExt;
 use handlebars::{to_json, Handlebars};
+use itertools::Itertools;
 use log::*;
 use regex::Regex;
 use serde::Deserialize;
 use sqlx::{Connection, SqliteConnection};
-use std::fmt::Write as _;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
 use structopt::StructOpt;
 use warp::Filter; // provides `try_next`
 
@@ -16,7 +16,11 @@ use urlharvest::*;
 const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
 const TEXT_HTML: &str = "text/html; charset=utf-8";
 
-const INDEX_NAME: &str = "index";
+const TPL_INDEX: &str = "index";
+const TPL_RESULT_HEADER: &str = "result_header";
+const TPL_RESULT_ROW: &str = "result_row";
+const TPL_RESULT_FOOTER: &str = "result_footer";
+
 const DEFAULT_REPLY_CAP: usize = 65536;
 
 const REQ_PATH_SEARCH: &str = "search";
@@ -34,20 +38,53 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 
-    {
-        // Just init the database if necessary,
-        // and then drop the connection.
-        let _db = start_db(&cfg).await?;
-    }
+    // Just init the database if necessary,
+    // and then drop the connection immediately.
+    let db = start_db(&cfg).await?;
+    drop(db);
 
-    let re_srch = Regex::new(RE_SEARCH)?;
-    let index_path = cfg.search_template.clone();
+    // Now it's time for some iterator porn.
+    let (
+        tpl_path_search_index,
+        tpl_path_search_result_header,
+        tpl_path_search_result_row,
+        tpl_path_search_result_footer,
+    ) = [
+        &cfg.tpl_search_index,
+        &cfg.tpl_search_result_header,
+        &cfg.tpl_search_result_row,
+        &cfg.tpl_search_result_footer,
+    ]
+    .iter()
+    .map(|t| {
+        // template names are relative to template_dir
+        // hence we construct full paths here
+        [&cfg.template_dir, *t]
+            .iter()
+            .collect::<PathBuf>()
+            .to_string_lossy()
+            .into_owned()
+    })
+    .collect_tuple()
+    .unwrap();
 
+    // Create Handlebars registry
     let mut hb_reg = Handlebars::new();
-    hb_reg.register_template_file(INDEX_NAME, &index_path)?;
+
+    // We render index html statically and save it
+    hb_reg.register_template_file(TPL_INDEX, &tpl_path_search_index)?;
     let mut tpl_data = serde_json::value::Map::new();
     tpl_data.insert("cmd_search".into(), to_json("search"));
-    let index_html = hb_reg.render(INDEX_NAME, &tpl_data)?;
+    let index_html = hb_reg.render(TPL_INDEX, &tpl_data)?;
+
+    // Register other templates
+    hb_reg.register_template_file(TPL_RESULT_HEADER, &tpl_path_search_result_header)?;
+    hb_reg.register_template_file(TPL_RESULT_ROW, &tpl_path_search_result_row)?;
+    hb_reg.register_template_file(TPL_RESULT_FOOTER, &tpl_path_search_result_footer)?;
+
+    // precompile this regex
+    let re_srch = Regex::new(RE_SEARCH)?;
+
     let server_addr: SocketAddr = cfg.search_listen;
 
     // GET / -> index html
@@ -65,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
                 return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
             }
 
-            match futures::executor::block_on(search(&db_search, s)) {
+            match futures::executor::block_on(search(&db_search, &hb_reg, s)) {
                 Ok(result) => my_response(TEXT_HTML, result),
                 Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
             }
@@ -150,7 +187,7 @@ struct DbRead {
     title: String,
 }
 
-async fn search<S1>(db: S1, params: SearchParam) -> anyhow::Result<String>
+async fn search<S1>(db: S1, hb_reg: &Handlebars<'_>, params: SearchParam) -> anyhow::Result<String>
 where
     S1: AsRef<str>,
 {
@@ -161,19 +198,12 @@ where
     let title = params.title.sql_search();
     info!("Search {chan} {nick} {url} {title}");
 
+    let tpl_data_empty = serde_json::value::Map::new();
+    let html_header = hb_reg.render(TPL_RESULT_HEADER, &tpl_data_empty)?;
+    let html_footer = hb_reg.render(TPL_RESULT_FOOTER, &tpl_data_empty)?;
+
     let mut html = String::with_capacity(DEFAULT_REPLY_CAP);
-    html.push_str(
-        r#"<table>
-  <tr>
-    <th>ID</th>
-    <th>First seen</th>
-    <th>Last seen</th>
-    <th>#</th>
-    <th>Channel</th>
-    <th>Nick</th>
-    <th>Title + URL</th>
-  </tr>"#,
-    );
+    html.push_str(&html_header);
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let mut st_s = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
@@ -184,29 +214,26 @@ where
         .fetch(&mut dbc);
 
     while let Some(row) = st_s.try_next().await? {
-        let id = row.id;
-        let first_seen = row.seen_first.ts_short_y();
-        let last_seen = row.seen_last.ts_short();
-        let num_seen = row.seen_count;
-        let chans = row.channels.esc_ltgt().sort_dedup_br();
-        let nicks = row.nicks.esc_ltgt().sort_dedup_br();
-        let url = row.url.esc_quot();
-        let title = row.title.esc_ltgt();
-
-        write!(
-            html,
-            "<td>{id}<br><input type=\"submit\" onclick=\"remove_url({id})\" value=\"remove\"></td>\n\
-            <td>{first_seen}<br><input type=\"submit\" onclick=\"remove_meta({id})\" value=\"refresh\"></td>\n\
-            <td>{last_seen}<br><div id=\"status_{id}\"></div></td>\n\
-            <td>{num_seen}</td>\n\
-                <td>{chans}</td><td>{nicks}</td>\n\
-                <td>{title}<br>\n\
-                <a href=\"{url}\">{url}</a></td>\n</tr>\n",
-        )
-        .unwrap();
+        let mut tpl_data_row = serde_json::value::Map::new();
+        [
+            ("id", row.id.to_string()),
+            ("first_seen", row.seen_first.ts_short_y()),
+            ("last_seen", row.seen_last.ts_short()),
+            ("num_seen", row.seen_count.to_string()),
+            ("chans", row.channels.esc_ltgt().sort_dedup_br()),
+            ("nicks", row.nicks.esc_ltgt().sort_dedup_br()),
+            ("url", row.url.esc_quot()),
+            ("title", row.title.esc_ltgt()),
+        ]
+        .iter()
+        .for_each(|(k, v)| {
+            tpl_data_row.insert(k.to_string(), to_json(v));
+        });
+        info!("Result row:\n{tpl_data_row:#?}");
+        html.push_str(&hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
     }
 
-    html.push_str("</table>\n");
+    html.push_str(&html_footer);
     Ok(html)
 }
 

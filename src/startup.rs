@@ -51,7 +51,10 @@ pub struct ConfigCommon {
     pub regex_nick: String,
     pub regex_url: String,
     pub search_listen: SocketAddr,
-    pub search_template: String,
+    pub tpl_search_index: String,
+    pub tpl_search_result_header: String,
+    pub tpl_search_result_row: String,
+    pub tpl_search_result_footer: String,
     pub url_blacklist: Vec<String>,
 }
 impl ConfigCommon {
@@ -59,13 +62,10 @@ impl ConfigCommon {
         debug!("Reading config file {}", &opts.config_file);
         let mut config: ConfigCommon =
             serde_json::from_reader(BufReader::new(File::open(&opts.config_file)?))?;
-
         config.db_file = shellexpand::full(&config.db_file)?.into_owned();
         config.irc_log_dir = shellexpand::full(&config.irc_log_dir)?.into_owned();
         config.template_dir = shellexpand::full(&config.template_dir)?.into_owned();
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();
-        config.search_template = shellexpand::full(&config.search_template)?.into_owned();
-
         Ok(config)
     }
 }

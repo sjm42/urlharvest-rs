@@ -7,7 +7,10 @@
     "regex_nick": "^[:\\d]+\\s+[<\\*][%@\\~\\&\\+\\s]*([^>\\s]+)>?\\s+",
     "regex_url": "(https?://[\\w/',\":;!%@=\\-\\.\\~\\?\\#\\[\\]\\{\\}\\$\\&\\(\\)\\*\\+]+[^\\s'\"\\]\\}])",
     "search_listen": "127.0.0.1:8080",
-    "search_template": "$HOME/urlharvest/templates/search.html.hbs",
+    "tpl_search_index": "search_index.html.hbs",
+    "tpl_search_result_header": "search_result_header.html.hbs",
+    "tpl_search_result_row": "search_result_row.html.hbs",
+    "tpl_search_result_footer": "search_result_footer.html.hbs",
     "url_blacklist": [
         "http://znc.in",
         "https://znc.in",
