@@ -39,6 +39,17 @@ impl OptsCommon {
             LevelFilter::Error
         }
     }
+    pub fn start_pgm(&self, name: &str) {
+        env_logger::Builder::new()
+            .filter_module(name, self.get_loglevel())
+            .format_timestamp_secs()
+            .init();
+        info!("Starting up {name}...");
+        debug!("Git branch: {}", env!("GIT_BRANCH"));
+        debug!("Git commit: {}", env!("GIT_COMMIT"));
+        debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
+        debug!("Compiler version: {}", env!("RUSTC_VERSION"));
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,17 +79,5 @@ impl ConfigCommon {
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();
         Ok(config)
     }
-}
-
-pub fn start_pgm(c: &OptsCommon, name: &str) {
-    env_logger::Builder::new()
-        .filter_module(name, c.get_loglevel())
-        .format_timestamp_secs()
-        .init();
-    info!("Starting up {name}...");
-    debug!("Git branch: {}", env!("GIT_BRANCH"));
-    debug!("Git commit: {}", env!("GIT_COMMIT"));
-    debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
-    debug!("Compiler version: {}", env!("RUSTC_VERSION"));
 }
 // EOF

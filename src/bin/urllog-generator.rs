@@ -24,7 +24,7 @@ const SLEEP_BUSY: u64 = 2;
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "urllog_generator");
+    opts.start_pgm("urllog_generator");
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{cfg:#?}");

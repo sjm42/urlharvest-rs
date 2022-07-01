@@ -31,7 +31,7 @@ const SQL_WRITE_META: &str =
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    start_pgm(&opts, "db_migrate");
+    opts.start_pgm("db_migrate");
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
