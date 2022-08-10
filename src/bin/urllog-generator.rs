@@ -1,20 +1,17 @@
 // urllog-generator.rs
 
-#![feature(variant_count)]
-
 use anyhow::{anyhow, bail};
 use chrono::*;
 use enum_iterator::{all, Sequence};
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::FromRow;
-use std::{collections::HashMap, fmt, fs, mem, thread, time};
+use std::{collections::HashMap, fmt, fs, thread, time};
 use structopt::StructOpt;
 use tera::Tera;
 use urlharvest::*;
 
-// A week in seconds
-const URL_EXPIRE: i64 = 7 * 24 * 3600;
+const URL_EXPIRE: i64 = 7 * 24 * 3600; // A week in seconds
 const VEC_SZ: usize = 4096;
 const TPL_SUFFIX: &str = ".tera";
 const SLEEP_IDLE: u64 = 10;
@@ -101,6 +98,8 @@ struct DbRead {
     title: String,
 }
 
+const CTX_NUM: usize = 32;
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Eq, Hash, Sequence, PartialEq)]
 enum CtxData {
@@ -145,7 +144,7 @@ const SQL_UNIQ: &str = "select min(url.id) as id, min(seen) as seen_first, max(s
 
 async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let mut data: HashMap<CtxData, Vec<String>> =
-        HashMap::with_capacity(mem::variant_count::<CtxData>());
+        HashMap::with_capacity(CTX_NUM);
     for k in all::<CtxData>() {
         let v: Vec<String> = Vec::with_capacity(VEC_SZ);
         data.insert(k, v);
