@@ -31,7 +31,7 @@ struct NoMeta {
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    opts.start_pgm("urllog_meta");
+    opts.start_pgm(env!("CARGO_BIN_NAME"));
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);

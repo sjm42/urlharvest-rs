@@ -21,7 +21,7 @@ const SLEEP_BUSY: u64 = 2;
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::from_args();
     opts.finish()?;
-    opts.start_pgm("urllog_generator");
+    opts.start_pgm(env!("CARGO_BIN_NAME"));
     info!("Starting up");
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{cfg:#?}");
@@ -143,8 +143,7 @@ const SQL_UNIQ: &str = "select min(url.id) as id, min(seen) as seen_first, max(s
     order by max(seen) desc";
 
 async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
-    let mut data: HashMap<CtxData, Vec<String>> =
-        HashMap::with_capacity(CTX_NUM);
+    let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
     for k in all::<CtxData>() {
         let v: Vec<String> = Vec::with_capacity(VEC_SZ);
         data.insert(k, v);

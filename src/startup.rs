@@ -45,11 +45,7 @@ impl OptsCommon {
             .format_timestamp_secs()
             .init();
 
-        info!(
-            "Starting up {} v{}...",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION")
-        );
+        info!("Starting up {name} v{}...", env!("CARGO_PKG_VERSION"));
         debug!("Git branch: {}", env!("GIT_BRANCH"));
         debug!("Git commit: {}", env!("GIT_COMMIT"));
         debug!("Source timestamp: {}", env!("SOURCE_TIMESTAMP"));
