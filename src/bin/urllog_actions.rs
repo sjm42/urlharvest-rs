@@ -1,5 +1,6 @@
 // urllog-search.rs
 
+use anyhow::anyhow;
 use futures::TryStreamExt;
 use handlebars::{to_json, Handlebars};
 use itertools::Itertools;
@@ -7,7 +8,7 @@ use log::*;
 use regex::Regex;
 use serde::Deserialize;
 use sqlx::{Connection, SqliteConnection};
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::Path};
 use structopt::StructOpt;
 use warp::Filter; // provides `try_next`
 
@@ -58,14 +59,10 @@ async fn main() -> anyhow::Result<()> {
     .map(|t| {
         // template names are relative to template_dir
         // hence we construct full paths here
-        [&cfg.template_dir, *t]
-            .iter()
-            .collect::<PathBuf>()
-            .to_string_lossy()
-            .into_owned()
+        Path::new(&cfg.template_dir).join(*t)
     })
     .collect_tuple()
-    .unwrap();
+    .ok_or_else(|| anyhow!("iter fail"))?;
 
     // Create Handlebars registry
     let mut hb_reg = Handlebars::new();

@@ -1,5 +1,6 @@
 // irssi-urlharvest.rs
 
+use anyhow::anyhow;
 use chrono::*;
 use linemux::MuxedLines;
 use log::*;
@@ -42,7 +43,11 @@ async fn main() -> anyhow::Result<()> {
         let log_f = log_fd?;
         if let Some(re_match) = re_log.captures(log_f.file_name().to_string_lossy().as_ref()) {
             chans.insert(
-                log_f.path().file_name().unwrap().to_os_string(),
+                log_f
+                    .path()
+                    .file_name()
+                    .ok_or_else(|| anyhow!("no filename"))?
+                    .to_os_string(),
                 re_match[1].to_owned(),
             );
             log_files.push(log_f);
@@ -80,7 +85,11 @@ async fn main() -> anyhow::Result<()> {
         let mut tx_i: usize = 0;
         db.dbc.execute("BEGIN").await?;
         for log_f in &log_files {
-            let log_nopath = log_f.path().file_name().unwrap().to_os_string();
+            let log_nopath = log_f
+                .path()
+                .file_name()
+                .ok_or_else(|| anyhow!("no filename"))?
+                .to_os_string();
             let chan = chans.get(&log_nopath).unwrap_or(&chan_unk);
             let reader = BufReader::new(File::open(log_f.path())?);
             let mut current_ts = Local::now();
