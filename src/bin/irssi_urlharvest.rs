@@ -7,6 +7,7 @@ use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
 use sqlx::Executor;
+use std::convert::TryInto;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, ffi::*, time::Instant};
@@ -179,7 +180,7 @@ fn detect_hourmin<S: AsRef<str>>(
     let (hh, mm) = m
         .iter()
         .skip(1)
-        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
     current.date().and_time(NaiveTime::from_hms_opt(hh, mm, 0)?)
 }
@@ -189,9 +190,9 @@ fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
     let (mon, day, year) = m
         .iter()
         .skip(1)
-        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
-    let naive_ts = NaiveDate::from_ymd_opt(year as i32, mon, day)?.and_hms(0, 0, 0);
+    let naive_ts = NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms(0, 0, 0);
     if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
         trace!("Found daychange {new_ts:?}");
         return Some(new_ts);
@@ -204,9 +205,10 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
     let (mon, day, hh, mm, ss, year) = m
         .iter()
         .skip(1)
-        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
-    let naive_ts = NaiveDate::from_ymd_opt(year as i32, mon, day)?.and_hms_opt(hh, mm, ss)?;
+    let naive_ts =
+        NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(hh, mm, ss)?;
     if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
         trace!("Found timestamp {new_ts:?}");
         return Some(new_ts);
