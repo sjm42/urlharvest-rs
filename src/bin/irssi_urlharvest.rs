@@ -2,6 +2,7 @@
 
 use anyhow::anyhow;
 use chrono::*;
+use itertools::Itertools;
 use linemux::MuxedLines;
 use log::*;
 use regex::Regex;
@@ -174,49 +175,41 @@ fn detect_hourmin<S: AsRef<str>>(
     msg: S,
     current: DateTime<Local>,
 ) -> Option<DateTime<Local>> {
-    if let Some(re_match) = re.captures(msg.as_ref()) {
-        let hh = &re_match[1];
-        let mm = &re_match[2];
-        let s = format!("{}{}00", hh, mm);
-        if let Ok(new_localtime) = NaiveTime::parse_from_str(&s, "%H%M%S") {
-            return current.date().and_time(new_localtime);
-        }
-    }
-    None
+    let m = re.captures(msg.as_ref())?;
+    let (hh, mm) = m
+        .iter()
+        .skip(1)
+        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .collect_tuple()?;
+    current.date().and_time(NaiveTime::from_hms_opt(hh, mm, 0)?)
 }
 
 fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
-    if let Some(re_match) = re.captures(msg.as_ref()) {
-        let mon = &re_match[1];
-        let day = &re_match[2];
-        let year = &re_match[3];
-        let s = format!("{}{}{}", year, mon, day);
-        if let Ok(naive_date) = NaiveDate::parse_from_str(&s, "%Y%b%d") {
-            let naive_ts = naive_date.and_hms(0, 0, 0);
-            if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                trace!("Found daychange {new_ts:?}");
-                return Some(new_ts);
-            }
-        }
+    let m = re.captures(msg.as_ref())?;
+    let (mon, day, year) = m
+        .iter()
+        .skip(1)
+        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .collect_tuple()?;
+    let naive_ts = NaiveDate::from_ymd_opt(year as i32, mon, day)?.and_hms(0, 0, 0);
+    if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+        trace!("Found daychange {new_ts:?}");
+        return Some(new_ts);
     }
     None
 }
 
 fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
-    if let Some(re_match) = re.captures(msg.as_ref()) {
-        let mon = &re_match[1];
-        let day = &re_match[2];
-        let hh = &re_match[3];
-        let mm = &re_match[4];
-        let ss = &re_match[5];
-        let year = &re_match[6];
-        let s = format!("{}{}{}-{}{}{}", year, mon, day, hh, mm, ss);
-        if let Ok(naive_ts) = NaiveDateTime::parse_from_str(&s, "%Y%b%d-%H%M%S") {
-            if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-                trace!("Found timestamp {new_ts:?}");
-                return Some(new_ts);
-            }
-        }
+    let m = re.captures(msg.as_ref())?;
+    let (mon, day, hh, mm, ss, year) = m
+        .iter()
+        .skip(1)
+        .filter_map(|m| Some(m?.as_str().parse::<u32>().ok()?))
+        .collect_tuple()?;
+    let naive_ts = NaiveDate::from_ymd_opt(year as i32, mon, day)?.and_hms_opt(hh, mm, ss)?;
+    if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
+        trace!("Found timestamp {new_ts:?}");
+        return Some(new_ts);
     }
     None
 }
