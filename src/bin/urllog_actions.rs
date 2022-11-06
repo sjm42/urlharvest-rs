@@ -219,10 +219,10 @@ where
             ("first_seen", row.seen_first.ts_short_y()),
             ("last_seen", row.seen_last.ts_short()),
             ("num_seen", row.seen_count.to_string()),
-            ("chans", row.channels.esc_ltgt().sort_dedup_br()),
-            ("nicks", row.nicks.esc_ltgt().sort_dedup_br()),
+            ("chans", row.channels.esc_et_lt_gt().sort_dedup_br()),
+            ("nicks", row.nicks.esc_et_lt_gt().sort_dedup_br()),
             ("url", row.url.esc_quot()),
-            ("title", row.title.esc_ltgt()),
+            ("title", row.title.esc_et_lt_gt()),
         ]
         .iter()
         .for_each(|(k, v)| {
@@ -260,7 +260,7 @@ where
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let db_res = sqlx::query(SQL_REMOVE_URL)
-        .bind(&id)
+        .bind(id)
         .execute(&mut dbc)
         .await?;
     let n_rows = db_res.rows_affected();
@@ -283,7 +283,7 @@ where
 
     let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
     let _db_res = sqlx::query(SQL_REMOVE_META)
-        .bind(&id)
+        .bind(id)
         .execute(&mut dbc)
         .await?;
 

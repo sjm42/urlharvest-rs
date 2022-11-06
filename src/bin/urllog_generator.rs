@@ -172,16 +172,16 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
             .push(row.seen_cnt.to_string());
         data.get_mut(&CtxData::channel)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.channel.esc_ltgt());
+            .push(row.channel.esc_et_lt_gt());
         data.get_mut(&CtxData::nick)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.nick.esc_ltgt());
+            .push(row.nick.esc_et_lt_gt());
         data.get_mut(&CtxData::url)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.url.esc_quot());
         data.get_mut(&CtxData::title)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.title.esc_ltgt());
+            .push(row.title.esc_et_lt_gt());
         n_rows += 1;
     }
     drop(st_url);
@@ -210,16 +210,16 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
             .push(row.seen_cnt.to_string());
         data.get_mut(&CtxData::uniq_channel)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.channel.esc_ltgt().sort_dedup_br());
+            .push(row.channel.esc_et_lt_gt().sort_dedup_br());
         data.get_mut(&CtxData::uniq_nick)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.nick.esc_ltgt().sort_dedup_br());
+            .push(row.nick.esc_et_lt_gt().sort_dedup_br());
         data.get_mut(&CtxData::uniq_url)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.url.esc_quot());
         data.get_mut(&CtxData::uniq_title)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.title.esc_ltgt());
+            .push(row.title.esc_et_lt_gt());
         n_rows += 1;
     }
     drop(st_uniq);

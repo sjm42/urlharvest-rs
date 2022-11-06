@@ -119,7 +119,7 @@ const SQL_INSERT_META: &str = "insert into url_meta (id, url_id, lang, title, de
         values (null, ?, ?, ?, ?)";
 pub async fn db_add_meta(db: &mut DbCtx, m: &MetaCtx) -> anyhow::Result<u64> {
     let res = sqlx::query(SQL_INSERT_META)
-        .bind(&m.url_id)
+        .bind(m.url_id)
         .bind(&m.lang)
         .bind(&m.title)
         .bind(&m.desc)

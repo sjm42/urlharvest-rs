@@ -32,14 +32,14 @@ impl TimeStampFormats for i64 {
     }
 }
 
-pub trait EscLtGt {
-    fn esc_ltgt(self) -> String;
+pub trait EscEtLtGt {
+    fn esc_et_lt_gt(self) -> String;
 }
-impl<S> EscLtGt for S
+impl<S> EscEtLtGt for S
 where
     S: AsRef<str>,
 {
-    fn esc_ltgt(self) -> String {
+    fn esc_et_lt_gt(self) -> String {
         self.as_ref()
             .replace('&', "&amp;")
             .replace('<', "&lt;")
