@@ -20,6 +20,10 @@ const VEC_SZ: usize = 64;
 const CHAN_UNK: &str = "UNKNOWN";
 const NICK_UNK: &str = "UNKNOWN";
 
+const RE_HOURMIN: &str = r#"^(\d\d):(\d\d)\s"#;
+const RE_DAYCHANGE: &str = r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#;
+const RE_TIMESTAMP: &str = r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#;
+
 struct IrcCtx {
     ts: i64,
     chan: String,
@@ -73,16 +77,15 @@ async fn main() -> anyhow::Result<()> {
 
         // Match most message lines, example:
         // "13:37 <@sjm> 1337"
-        let re_hourmin = Regex::new(r#"^(\d\d):(\d\d)\s"#)?;
+        let re_hourmin = Regex::new(RE_HOURMIN)?;
 
         // Match example line:
         // "--- Day changed Fri Aug 13 2021"
-        let re_daychange = Regex::new(r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#)?;
+        let re_daychange = Regex::new(RE_DAYCHANGE)?;
 
         // Match example line:
         // "--- Log opened Sun Aug 08 13:37:42 2021"
-        let re_timestamp =
-            Regex::new(r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#)?;
+        let re_timestamp = Regex::new(RE_TIMESTAMP)?;
 
         let mut tx_i: usize = 0;
         db.dbc.execute("BEGIN").await?;
@@ -182,7 +185,15 @@ fn detect_hourmin<S: AsRef<str>>(
         .skip(1)
         .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
-    current.date().and_time(NaiveTime::from_hms_opt(hh, mm, 0)?)
+
+    let naive_ts = current
+        .date_naive()
+        .and_time(NaiveTime::from_hms_opt(hh, mm, 0)?);
+    if let LocalResult::Single(dt) = Local.from_local_datetime(&naive_ts) {
+        Some(dt)
+    } else {
+        None
+    }
 }
 
 fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
@@ -192,12 +203,15 @@ fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         .skip(1)
         .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
-    let naive_ts = NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms(0, 0, 0);
-    if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
-        trace!("Found daychange {new_ts:?}");
-        return Some(new_ts);
+
+    let naive_ts =
+        NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(0, 0, 0)?;
+    if let LocalResult::Single(dt) = Local.from_local_datetime(&naive_ts) {
+        trace!("Found daychange {dt:?}");
+        Some(dt)
+    } else {
+        None
     }
-    None
 }
 
 fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>> {
@@ -211,9 +225,10 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(hh, mm, ss)?;
     if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
         trace!("Found timestamp {new_ts:?}");
-        return Some(new_ts);
+        Some(new_ts)
+    } else {
+        None
     }
-    None
 }
 
 async fn handle_ircmsg(
