@@ -1,4 +1,4 @@
-// db-migrate.rs
+// bin/db_migrate.rs
 
 use futures::TryStreamExt; // provides `try_next`
 use log::*;

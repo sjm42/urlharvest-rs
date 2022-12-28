@@ -1,4 +1,4 @@
-// urllog-generator.rs
+// bin/urllog_generator.rs
 
 use anyhow::{anyhow, bail};
 use chrono::*;
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             );
             info!("Generating {filename_out} from {template}");
             let template_output = tera.render(template, &ctx)?;
-            fs::write(&filename_tmp, &template_output)?;
+            fs::write(&filename_tmp, template_output)?;
             fs::rename(&filename_tmp, &filename_out)?;
         }
         info!(

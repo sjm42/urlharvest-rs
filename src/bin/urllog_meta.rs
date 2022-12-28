@@ -1,4 +1,4 @@
-// urllog-meta.rs
+// bin/urllog_meta.rs
 
 use futures::TryStreamExt;
 use log::*;

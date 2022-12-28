@@ -1116,9 +1116,9 @@ dependencies = [
 
 [[package]]
 name = "linemux"
-version = "0.2.4"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51157eba73f3dae3b17ae3ea5b29a8ad0346bdff3881e9a00646b827db066a83"
+checksum = "feb035c7806bd7982a317d8d66815021e91f7ab14a5fbedee22b06f608f11b43"
 dependencies = [
  "futures-util",
  "notify",
@@ -1286,9 +1286,9 @@ dependencies = [
 
 [[package]]
 name = "notify"
-version = "5.0.0-pre.16"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "530f6314d6904508082f4ea424a0275cf62d341e118b313663f266429cb19693"
+checksum = "ed2c66da08abae1c024c01d635253e402341b4060a12e99b31c7594063bf490a"
 dependencies = [
  "bitflags",
  "crossbeam-channel",
@@ -2696,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "urlharvest"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "anyhow",
  "build-data",

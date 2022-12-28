@@ -1,4 +1,4 @@
-// irssi-urlharvest.rs
+// bin/irssi_urlharvest.rs
 
 use anyhow::anyhow;
 use chrono::*;
