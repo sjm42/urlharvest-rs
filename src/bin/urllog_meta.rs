@@ -2,6 +2,7 @@
 
 use futures::TryStreamExt;
 use log::*;
+use regex::Regex;
 use std::{thread, time};
 use structopt::StructOpt;
 use url::Url;
@@ -107,6 +108,16 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
 }
 
 pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Result<()> {
+    static mut WS_RE: Option<Regex> = None;
+
+    // We are called sequentially and thus no race condition here.
+    unsafe {
+        if WS_RE.is_none() {
+            // pre-compile whitespace regex once
+            WS_RE = Some(Regex::new(r"\s+")?);
+        }
+    }
+
     if let Ok(url) = Url::parse(url_s) {
         // Now we should have a canonical url, IDN handled etc.
         let url_c = String::from(url);
@@ -135,8 +146,31 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
                 desc = STR_ERR.into();
             }
         }
+
+        // Cleanup the title
+        let mut title_c = unsafe {
+            WS_RE
+                .as_ref()
+                .unwrap()
+                .replace_all(&title, " ")
+                .trim()
+                .to_string()
+        };
+        if title_c.len() > 42 {
+            let mut i = 38;
+            loop {
+                // find a UTF-8 code point boundary to safely split at
+                if title_c.is_char_boundary(i) {
+                    break;
+                }
+                i += 1;
+            }
+            let (s1, _) = title_c.split_at(i);
+            title_c = format!("{}...", s1);
+        }
+
         info!(
-            "URL metadata:\nid: {url_id}\nurl: {url_c}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",
+            "URL metadata:\nid: {url_id}\nurl: {url_c}\nlang: {lang}\ntitle: {title_c}\ndesc: {desc}",
         );
         info!(
             "Inserted {} row(s)",
@@ -145,7 +179,7 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
                 &MetaCtx {
                     url_id,
                     lang,
-                    title,
+                    title: title_c,
                     desc,
                 },
             )
