@@ -156,8 +156,8 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
                 .trim()
                 .to_string()
         };
-        if title_c.len() > 42 {
-            let mut i = 38;
+        if title_c.len() > 400 {
+            let mut i = 396;
             loop {
                 // find a UTF-8 code point boundary to safely split at
                 if title_c.is_char_boundary(i) {
