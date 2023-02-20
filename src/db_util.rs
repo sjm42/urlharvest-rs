@@ -2,9 +2,8 @@
 
 use chrono::*;
 use log::*;
-// use rusqlite::{named_params, Connection};
 use sqlx::{Connection, SqliteConnection};
-use std::{thread, time};
+use tokio::time::{sleep, Duration};
 
 use crate::*;
 
@@ -103,7 +102,7 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> anyhow::Result<u64> {
             }
         }
         error!("Retrying in {}s...", RETRY_SLEEP);
-        thread::sleep(time::Duration::new(RETRY_SLEEP, 0));
+        sleep(Duration::new(RETRY_SLEEP, 0)).await;
         retry += 1;
     }
     if db.update_change {

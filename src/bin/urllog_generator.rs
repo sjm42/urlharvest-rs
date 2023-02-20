@@ -6,9 +6,10 @@ use enum_iterator::{all, Sequence};
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::FromRow;
-use std::{collections::HashMap, fmt, fs, thread, time};
+use std::{collections::HashMap, fmt, fs};
 use structopt::StructOpt;
 use tera::Tera;
+use tokio::time::{sleep, Duration};
 use urlharvest::*;
 
 const URL_EXPIRE: i64 = 7 * 24 * 3600; // A week in seconds
@@ -49,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         let db_ts = db_last_change(&mut db).await?;
         if db_ts <= latest_db {
             trace!("Nothing new in DB.");
-            thread::sleep(time::Duration::new(SLEEP_IDLE, 0));
+            sleep(Duration::new(SLEEP_IDLE, 0)).await;
             continue;
         }
         latest_db = db_ts;
@@ -81,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
             "Template rendering took {} ms.",
             Utc::now().signed_duration_since(now).num_milliseconds()
         );
-        thread::sleep(time::Duration::new(SLEEP_BUSY, 0));
+        sleep(Duration::new(SLEEP_BUSY, 0)).await;
     }
 }
 

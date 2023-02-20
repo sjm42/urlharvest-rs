@@ -3,8 +3,8 @@
 use futures::TryStreamExt;
 use log::*;
 use regex::Regex;
-use std::{thread, time};
 use structopt::StructOpt;
+use tokio::time::{sleep, Duration};
 use url::Url;
 use webpage::{Webpage, WebpageOptions}; // provides `try_next`
 
@@ -71,7 +71,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
         let db_ts = db_last_change(db).await?;
         if mode == ProcessMode::Live && db_ts <= latest_ts {
             trace!("Nothing new in DB.");
-            thread::sleep(time::Duration::new(SLEEP_POLL, 0));
+            sleep(Duration::new(SLEEP_POLL, 0)).await;
             continue;
         }
         latest_ts = db_ts;
@@ -124,7 +124,7 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
 
         let w_opt = WebpageOptions {
             allow_insecure: true,
-            timeout: time::Duration::new(5, 0),
+            timeout: Duration::new(5, 0),
             ..Default::default()
         };
         info!("Fetching URL {url_c}");
