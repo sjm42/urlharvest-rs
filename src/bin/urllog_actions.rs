@@ -8,7 +8,7 @@ use log::*;
 use regex::Regex;
 use serde::Deserialize;
 use sqlx::{Connection, SqliteConnection};
-use std::{net::SocketAddr, path::Path};
+use std::{fmt::Display, net::SocketAddr, path::Path, sync::Arc};
 use structopt::StructOpt;
 use warp::Filter; // provides `try_next`
 
@@ -25,7 +25,7 @@ const TPL_RESULT_FOOTER: &str = "result_footer";
 const DEFAULT_REPLY_CAP: usize = 65536;
 
 const REQ_PATH_SEARCH: &str = "search";
-const RE_SEARCH: &str = r#"^[-_\.:/0-9a-zA-Z\?\* ]*$"#;
+const RE_SEARCH: &str = r#"^[-_\.:;/0-9a-zA-Z\?\*\(\)\[\]\{\}\|\\ ]*$"#;
 
 const REQ_PATH_REMOVE_URL: &str = "remove_url";
 const REQ_PATH_REMOVE_META: &str = "remove_meta";
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 
-    // Just init the database if necessary,
+    // Just check and init the database if necessary,
     // and then drop the connection immediately.
     let db = start_db(&cfg).await?;
     drop(db);
@@ -62,12 +62,12 @@ async fn main() -> anyhow::Result<()> {
         Path::new(&cfg.template_dir).join(*t)
     })
     .collect_tuple()
-    .ok_or_else(|| anyhow!("iter fail"))?;
+    .ok_or_else(|| anyhow!("Template iteration failed"))?;
 
     // Create Handlebars registry
     let mut hb_reg = Handlebars::new();
 
-    // We handle html escaping ourselves, so must avoid double escaping here
+    // We handle html escaping ourselves
     hb_reg.register_escape_fn(handlebars::no_escape);
 
     // We render index html statically and save it
@@ -91,43 +91,57 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path::end())
         .map(move || my_response(TEXT_HTML, index_html.clone()));
 
-    let db_search = cfg.db_file.clone();
+    let db_search = Arc::new(cfg.db_file.clone());
+    let db_rm_url = db_search.clone();
+    let db_rm_meta = db_search.clone();
+    let a_hb = Arc::new(hb_reg);
+    let a_srch = Arc::new(re_srch);
+
     let req_search = warp::get()
         .and(warp::path(REQ_PATH_SEARCH))
         .and(warp::path::end())
         .and(warp::query::<SearchParam>())
-        .map(move |s: SearchParam| {
-            if !validate_search_param(&s, &re_srch) {
-                return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
-            }
+        .then(move |s: SearchParam| {
+            let db = db_search.clone();
+            let reg = a_hb.clone();
+            let srch = a_srch.clone();
+            async move {
+                if !validate_search_param(&s, srch) {
+                    return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
+                }
 
-            match futures::executor::block_on(search(&db_search, &hb_reg, s)) {
-                Ok(result) => my_response(TEXT_HTML, result),
-                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+                match search(db, reg, s).await {
+                    Ok(result) => my_response(TEXT_HTML, result),
+                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+                }
             }
         });
 
-    let db_rm_url = cfg.db_file.clone();
     let req_remove_url = warp::get()
         .and(warp::path(REQ_PATH_REMOVE_URL))
         .and(warp::path::end())
         .and(warp::query::<RemoveParam>())
-        .map(
-            move |s: RemoveParam| match futures::executor::block_on(remove_url(&db_rm_url, s)) {
-                Ok(result) => my_response(TEXT_HTML, result),
-                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
-            },
-        );
+        .then(move |s: RemoveParam| {
+            let db = db_rm_url.clone();
+            async move {
+                match remove_url(db, s).await {
+                    Ok(result) => my_response(TEXT_HTML, result),
+                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+                }
+            }
+        });
 
-    let db_rm_meta = cfg.db_file.clone();
     let req_remove_meta = warp::get()
         .and(warp::path(REQ_PATH_REMOVE_META))
         .and(warp::path::end())
         .and(warp::query::<RemoveParam>())
-        .map(move |s: RemoveParam| {
-            match futures::executor::block_on(remove_meta(&db_rm_meta, s)) {
-                Ok(result) => my_response(TEXT_HTML, result),
-                Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+        .then(move |s: RemoveParam| {
+            let db = db_rm_meta.clone();
+            async move {
+                match remove_meta(db, s).await {
+                    Ok(result) => my_response(TEXT_HTML, result),
+                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
+                }
             }
         });
 
@@ -135,8 +149,8 @@ async fn main() -> anyhow::Result<()> {
         .or(req_remove_url)
         .or(req_remove_meta)
         .or(req_index);
-    warp::serve(req_routes).run(server_addr).await;
 
+    warp::serve(req_routes).run(server_addr).await;
     Ok(())
 }
 
@@ -186,9 +200,13 @@ struct DbRead {
     title: String,
 }
 
-async fn search<S1>(db: S1, hb_reg: &Handlebars<'_>, params: SearchParam) -> anyhow::Result<String>
+async fn search<S1>(
+    db: Arc<S1>,
+    hb_reg: Arc<Handlebars<'_>>,
+    params: SearchParam,
+) -> anyhow::Result<String>
 where
-    S1: AsRef<str>,
+    S1: AsRef<str> + Display,
 {
     info!("search({params:?})");
     let chan = params.chan.sql_search();
@@ -236,7 +254,7 @@ where
     Ok(html)
 }
 
-fn validate_search_param(par: &SearchParam, re: &Regex) -> bool {
+fn validate_search_param(par: &SearchParam, re: Arc<Regex>) -> bool {
     re.is_match(&par.chan)
         && re.is_match(&par.nick)
         && re.is_match(&par.url)
@@ -248,11 +266,11 @@ pub struct RemoveParam {
     id: String,
 }
 
-const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id=?)";
+const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = ?)";
 
-async fn remove_url<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
+async fn remove_url<S1>(db: Arc<S1>, params: RemoveParam) -> anyhow::Result<String>
 where
-    S1: AsRef<str>,
+    S1: AsRef<str> + Display,
 {
     info!("remove_url({params:?})");
     let id = params.id.parse::<i64>().unwrap_or_default();
@@ -271,11 +289,11 @@ where
     Ok(msg)
 }
 
-const SQL_REMOVE_META: &str = "delete from url_meta where url_id=?";
+const SQL_REMOVE_META: &str = "delete from url_meta where url_id = ?";
 
-async fn remove_meta<S1>(db: S1, params: RemoveParam) -> anyhow::Result<String>
+async fn remove_meta<S1>(db: Arc<S1>, params: RemoveParam) -> anyhow::Result<String>
 where
-    S1: AsRef<str>,
+    S1: AsRef<str> + Display,
 {
     info!("remove_meta({params:?})");
     let id = params.id.parse::<i64>().unwrap_or_default();

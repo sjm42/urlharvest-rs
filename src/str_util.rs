@@ -96,4 +96,20 @@ where
         )
     }
 }
+
+pub trait CollapseWhiteSpace {
+    fn ws_collapse(self) -> String;
+}
+impl<S> CollapseWhiteSpace for S
+where
+    S: AsRef<str>,
+{
+    fn ws_collapse(self) -> String {
+        self.as_ref()
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+    }
+}
+
 // EOF

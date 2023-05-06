@@ -55,35 +55,42 @@ async fn main() -> anyhow::Result<()> {
         }
         latest_db = db_ts;
 
-        let mut now = Utc::now();
-        let ts_limit = now.timestamp() - URL_EXPIRE;
-        info!("Generating URL logs starting from {}", ts_limit.ts_long());
-        let ctx = generate_ctx(&mut db, ts_limit).await?;
-        info!(
-            "Database read took {} ms.",
-            Utc::now().signed_duration_since(now).num_milliseconds()
-        );
-
-        now = Utc::now();
-        for template in tera.get_template_names() {
-            let basename = template.strip_suffix(TPL_SUFFIX).unwrap_or(template);
-            let filename_out = format!("{}/{basename}", &cfg.html_dir);
-            let filename_tmp = format!(
-                "{filename_out}.{}.{}.tmp",
-                std::process::id(),
-                Utc::now().timestamp_nanos()
-            );
-            info!("Generating {filename_out} from {template}");
-            let template_output = tera.render(template, &ctx)?;
-            fs::write(&filename_tmp, template_output)?;
-            fs::rename(&filename_tmp, &filename_out)?;
+        if let Err(e) = generate_pages(&mut db, &tera, &cfg.html_dir).await {
+            error!("Page generate error: {e}");
         }
-        info!(
-            "Template rendering took {} ms.",
-            Utc::now().signed_duration_since(now).num_milliseconds()
-        );
         sleep(Duration::new(SLEEP_BUSY, 0)).await;
     }
+}
+
+async fn generate_pages(db: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::Result<()> {
+    let mut now = Utc::now();
+    let ts_limit = now.timestamp() - URL_EXPIRE;
+    info!("Generating URL logs starting from {}", ts_limit.ts_long());
+    let ctx = generate_ctx(db, ts_limit).await?;
+    info!(
+        "Database read took {} ms.",
+        Utc::now().signed_duration_since(now).num_milliseconds()
+    );
+
+    now = Utc::now();
+    for template in tera.get_template_names() {
+        let basename = template.strip_suffix(TPL_SUFFIX).unwrap_or(template);
+        let filename_out = format!("{html_dir}/{basename}");
+        let filename_tmp = format!(
+            "{filename_out}.{}.{}.tmp",
+            std::process::id(),
+            Utc::now().timestamp_nanos()
+        );
+        info!("Generating {filename_out} from {template}");
+        let template_output = tera.render(template, &ctx)?;
+        fs::write(&filename_tmp, template_output)?;
+        fs::rename(&filename_tmp, &filename_out)?;
+    }
+    info!(
+        "Template rendering took {} ms.",
+        Utc::now().signed_duration_since(now).num_milliseconds()
+    );
+    Ok(())
 }
 
 #[derive(Debug, FromRow)]
@@ -228,10 +235,13 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
     info!("Got {n_rows} uniq rows.");
     ctx.insert("uniq_n_rows", &n_rows);
 
+    // Magic to iterate through all enum variants
     for k in all::<CtxData>() {
+        let k_name = k.to_string();
         ctx.insert(
-            k.to_string(),
-            data.get(&k).ok_or_else(|| anyhow!("no data"))?,
+            k_name.clone(),
+            data.get(&k)
+                .ok_or_else(|| anyhow!("No data for {k_name}"))?,
         );
     }
 
