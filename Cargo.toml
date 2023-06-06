@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -35,9 +35,9 @@ sqlx = { version = "0.6", features = [
   "offline",
 ] }
 structopt = "0.3"
-tera = "1.18"
+tera = "1.19"
 tokio = { version = "1.28", features = ["full"] }
-url = "2.3"
+url = "2.4"
 warp = "0.3"
 webpage = "1.6"
 
