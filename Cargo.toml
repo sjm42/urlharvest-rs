@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -20,7 +20,7 @@ enum-iterator = "1.4"
 env_logger = "0.10"
 futures = "0.3"
 handlebars = "4.3"
-itertools = "0.10"
+itertools = "0.11"
 linemux = "0.3"
 log = "0.4"
 regex = "1.8"
@@ -36,7 +36,7 @@ sqlx = { version = "0.6", features = [
 ] }
 structopt = "0.3"
 tera = "1.19"
-tokio = { version = "1.28", features = ["full"] }
+tokio = { version = "1.29", features = ["full"] }
 url = "2.4"
 warp = "0.3"
 webpage = "1.6"
