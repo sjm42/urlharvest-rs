@@ -20,9 +20,9 @@ const VEC_SZ: usize = 64;
 const CHAN_UNK: &str = "UNKNOWN";
 const NICK_UNK: &str = "UNKNOWN";
 
-const RE_HOURMIN: &str = r#"^(\d\d):(\d\d)\s"#;
-const RE_DAYCHANGE: &str = r#"^--- Day changed \w+ (\w+) (\d+) (\d+)"#;
-const RE_TIMESTAMP: &str = r#"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)"#;
+const RE_HOURMIN: &str = r"^(\d\d):(\d\d)\s";
+const RE_DAYCHANGE: &str = r"^--- Day changed \w+ (\w+) (\d+) (\d+)";
+const RE_TIMESTAMP: &str = r"^--- Log opened \w+ (\w+) (\d+) (\d+):(\d+):(\d+) (\d+)";
 
 struct IrcCtx {
     ts: i64,

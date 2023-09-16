@@ -25,7 +25,7 @@ const TPL_RESULT_FOOTER: &str = "result_footer";
 const DEFAULT_REPLY_CAP: usize = 65536;
 
 const REQ_PATH_SEARCH: &str = "search";
-const RE_SEARCH: &str = r#"^[-_\.:;/0-9a-zA-Z\?\*\(\)\[\]\{\}\|\\ ]*$"#;
+const RE_SEARCH: &str = r"^[-_\.:;/0-9a-zA-Z\?\*\(\)\[\]\{\}\|\\ ]*$";
 
 const REQ_PATH_REMOVE_URL: &str = "remove_url";
 const REQ_PATH_REMOVE_META: &str = "remove_meta";

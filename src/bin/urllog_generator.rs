@@ -79,7 +79,7 @@ async fn generate_pages(db: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::
         let filename_tmp = format!(
             "{filename_out}.{}.{}.tmp",
             std::process::id(),
-            Utc::now().timestamp_nanos()
+            Utc::now().timestamp_nanos_opt().unwrap_or(0)
         );
         info!("Generating {filename_out} from {template}");
         let template_output = tera.render(template, &ctx)?;
