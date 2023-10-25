@@ -124,11 +124,9 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
         // Now we should have a canonical url, IDN handled etc.
         let url_c = String::from(url);
 
-        let w_opt = WebpageOptions {
-            allow_insecure: true,
-            timeout: Duration::new(5, 0),
-            ..Default::default()
-        };
+        let mut w_opt = WebpageOptions::default();
+        w_opt.allow_insecure = true;
+        w_opt.timeout = Duration::new(5, 0);
         info!("Fetching URL {url_c}");
         let (mut title, lang, desc) = match Webpage::from_url(&url_c, w_opt) {
             Ok(pageinfo) => (
