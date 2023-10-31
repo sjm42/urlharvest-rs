@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "1.0.9"
+version = "1.1.0"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -20,10 +20,18 @@ enum-iterator = "1.4"
 env_logger = "0.10"
 futures = "0.3"
 handlebars = "4.4"
+hyper = { version = "0.14", features = ["http1", "client"] }
+hyper-rustls = { version = "0.24", default-features = false, features = [
+  "native-tokio",
+  "http1",
+  "tls12",
+  "logging",
+] }
 itertools = "0.11"
 linemux = "0.3"
 log = "0.4"
 regex = "1.10"
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 shellexpand = { version = "3.1", features = ["full"] }
@@ -47,8 +55,6 @@ build-data = "0.1"
 
 [profile.release]
 lto = true
-opt-level = "s" # static
-# opt-level = 3 # default
-# opt-level = 'z'  # Optimize for size.
+opt-level = 3
 
 # EOF

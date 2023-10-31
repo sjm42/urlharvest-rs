@@ -2,11 +2,8 @@
 
 use futures::TryStreamExt;
 use log::*;
-use regex::Regex;
 use structopt::StructOpt;
 use tokio::time::{sleep, Duration};
-use url::Url;
-use webpage::{Webpage, WebpageOptions}; // provides `try_next`
 
 use urlharvest::*;
 
@@ -110,73 +107,61 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
 }
 
 pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Result<()> {
-    static mut WS_RE: Option<Regex> = None;
-
-    // We are called sequentially and thus no race condition here.
-    unsafe {
-        if WS_RE.is_none() {
-            // pre-compile whitespace regex once
-            WS_RE = Some(Regex::new(r"\s+")?);
-        }
-    }
-
-    if let Ok(url) = Url::parse(url_s) {
-        // Now we should have a canonical url, IDN handled etc.
-        let url_c = String::from(url);
-
-        let mut w_opt = WebpageOptions::default();
-        w_opt.allow_insecure = true;
-        w_opt.timeout = Duration::new(5, 0);
-        info!("Fetching URL {url_c}");
-        let (mut title, lang, desc) = match Webpage::from_url(&url_c, w_opt) {
-            Ok(pageinfo) => (
-                pageinfo.html.title.unwrap_or_else(|| STR_NA.to_owned()),
-                pageinfo.html.language.unwrap_or_else(|| STR_NA.to_owned()),
-                pageinfo
-                    .html
-                    .description
-                    .unwrap_or_else(|| STR_NA.to_owned()),
+    let (mut title, lang, desc) = match get_url_body(url_s).await {
+        Err(e) => (
+            format!("(URL fetch error: {e:?})"),
+            STR_ERR.into(),
+            STR_ERR.into(),
+        ),
+        Ok(body) => match webpage::HTML::from_string(body, None) {
+            Err(e) => (
+                format!("(Webpage HTML error: {e:?})"),
+                STR_ERR.into(),
+                STR_ERR.into(),
             ),
-            Err(e) => (format!("(Error: {e:?})"), STR_ERR.into(), STR_ERR.into()),
-        };
+            Ok(html) => (
+                html.title.unwrap_or_else(|| STR_NA.to_owned()),
+                html.language.unwrap_or_else(|| STR_NA.to_owned()),
+                html.description.unwrap_or_else(|| STR_NA.to_owned()),
+            ),
+        },
+    };
 
-        // Cleanup the title
-        title = title.ws_collapse();
-        let len = title.len();
-        if len > TITLE_MAX_LEN {
-            let mut i = TITLE_MAX_LEN - 8;
-            loop {
-                // find a UTF-8 code point boundary to safely split at
-                if title.is_char_boundary(i) || i >= len {
-                    break;
-                }
-                i += 1;
+    // Cleanup the title
+    title = title.ws_collapse();
+    let len = title.len();
+    if len > TITLE_MAX_LEN {
+        let mut i = TITLE_MAX_LEN - 8;
+        loop {
+            // find a UTF-8 code point boundary to safely split at
+            if title.is_char_boundary(i) || i >= len {
+                break;
             }
-            if i < len {
-                let (s1, _) = title.split_at(i);
-                title = format!("{}...", s1);
-            } else {
-                error!("Did not find char boundary, should never happen.");
-            }
+            i += 1;
         }
-
-        info!(
-            "URL metadata:\nid: {url_id}\nurl: {url_c}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",
-        );
-        info!(
-            "Inserted {} row(s)",
-            db_add_meta(
-                db,
-                &MetaCtx {
-                    url_id,
-                    lang,
-                    title,
-                    desc,
-                },
-            )
-            .await?
-        );
+        if i < len {
+            let (s1, _) = title.split_at(i);
+            title = format!("{}...", s1);
+        } else {
+            error!("Did not find char boundary, should never happen.");
+        }
     }
+
+    info!("URL metadata:\nid: {url_id}\nurl: {url_s}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
+    info!(
+        "Inserted {} row(s)",
+        db_add_meta(
+            db,
+            &MetaCtx {
+                url_id,
+                lang,
+                title,
+                desc,
+            },
+        )
+        .await?
+    );
+
     Ok(())
 }
 // EOF
