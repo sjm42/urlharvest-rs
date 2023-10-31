@@ -113,7 +113,8 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
             STR_ERR.into(),
             STR_ERR.into(),
         ),
-        Ok(body) => match webpage::HTML::from_string(body, None) {
+        Ok(None) => (STR_NA.into(), STR_NA.into(), STR_NA.into()),
+        Ok(Some(body)) => match webpage::HTML::from_string(body, None) {
             Err(e) => (
                 format!("(Webpage HTML error: {e:?})"),
                 STR_ERR.into(),
