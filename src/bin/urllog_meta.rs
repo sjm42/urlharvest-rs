@@ -107,7 +107,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
 }
 
 pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Result<()> {
-    let (mut title, lang, desc) = match get_url_body(url_s).await {
+    let (mut title, lang, desc) = match get_http_body(url_s).await {
         Err(e) => (
             format!("(URL fetch error: {e:?})"),
             STR_ERR.into(),
