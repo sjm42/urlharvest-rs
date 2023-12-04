@@ -1,9 +1,9 @@
 // bin/db_migrate.rs
 
+use clap::Parser;
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::{Connection, Executor, SqliteConnection};
-use structopt::StructOpt;
 use urlharvest::*;
 
 const TX_SZ: usize = 1024;
@@ -29,7 +29,7 @@ const SQL_WRITE_META: &str =
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsCommon::from_args();
+    let mut opts = OptsCommon::parse();
     opts.finish()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;

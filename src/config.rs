@@ -1,24 +1,24 @@
 // config.rs
 
+use clap::Parser;
 use log::*;
 use serde::{Deserialize, Serialize};
 use std::{env, fs::File, io::BufReader, net::SocketAddr};
-use structopt::StructOpt;
 
-#[derive(Debug, Clone, StructOpt)]
+#[derive(Debug, Clone, Parser)]
 pub struct OptsCommon {
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub verbose: bool,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub debug: bool,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub trace: bool,
 
-    #[structopt(short, long, default_value = "$HOME/urlharvest/config/urlharvest.json")]
+    #[arg(short, long, default_value = "$HOME/urlharvest/config/urlharvest.json")]
     pub config_file: String,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub read_history: bool,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub meta_backlog: bool,
 }
 impl OptsCommon {

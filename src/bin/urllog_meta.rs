@@ -1,8 +1,8 @@
 // bin/urllog_meta.rs
 
+use clap::Parser;
 use futures::TryStreamExt;
 use log::*;
-use structopt::StructOpt;
 use tokio::time::{sleep, Duration};
 
 use urlharvest::*;
@@ -28,7 +28,7 @@ struct NoMeta {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsCommon::from_args();
+    let mut opts = OptsCommon::parse();
     opts.finish()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;

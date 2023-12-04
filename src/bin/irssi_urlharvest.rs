@@ -2,6 +2,7 @@
 
 use anyhow::anyhow;
 use chrono::*;
+use clap::Parser;
 use itertools::Itertools;
 use linemux::MuxedLines;
 use log::*;
@@ -11,7 +12,6 @@ use std::convert::TryInto;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufRead, BufReader};
 use std::{collections::HashMap, ffi::*, time::Instant};
-use structopt::StructOpt;
 
 use urlharvest::*;
 
@@ -32,7 +32,7 @@ struct IrcCtx {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsCommon::from_args();
+    let mut opts = OptsCommon::parse();
     opts.finish()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;

@@ -2,12 +2,12 @@
 
 use anyhow::{anyhow, bail};
 use chrono::*;
+use clap::Parser;
 use enum_iterator::{all, Sequence};
 use futures::TryStreamExt; // provides `try_next`
 use log::*;
 use sqlx::FromRow;
 use std::{collections::HashMap, fmt, fs};
-use structopt::StructOpt;
 use tera::Tera;
 use tokio::time::{sleep, Duration};
 use urlharvest::*;
@@ -20,7 +20,7 @@ const SLEEP_BUSY: u64 = 2;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsCommon::from_args();
+    let mut opts = OptsCommon::parse();
     opts.finish()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;

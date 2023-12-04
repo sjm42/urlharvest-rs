@@ -1,6 +1,7 @@
 // bin/urllog_actions.rs
 
 use anyhow::anyhow;
+use clap::Parser;
 use futures::TryStreamExt;
 use handlebars::{to_json, Handlebars};
 use itertools::Itertools;
@@ -9,7 +10,6 @@ use regex::Regex;
 use serde::Deserialize;
 use sqlx::{Connection, SqliteConnection};
 use std::{fmt::Display, net::SocketAddr, path::Path, sync::Arc};
-use structopt::StructOpt;
 use warp::Filter; // provides `try_next`
 
 use urlharvest::*;
@@ -32,7 +32,7 @@ const REQ_PATH_REMOVE_META: &str = "remove_meta";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts = OptsCommon::from_args();
+    let mut opts = OptsCommon::parse();
     opts.finish()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
