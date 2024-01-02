@@ -98,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
             let chan = chans.get(&log_nopath).unwrap_or(&chan_unk);
             let reader = BufReader::new(File::open(log_f.path())?);
             let mut current_ts = Local::now();
-            for (_index, line) in reader.lines().enumerate() {
+            for line in reader.lines() {
                 let msg = line?;
                 tx_i += 1;
                 if tx_i >= TX_SZ {

@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "1.2.1"
+version = "1.2.2"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -20,7 +20,7 @@ clap = { version = "4.4", features = ["derive"] }
 enum-iterator = "1"
 env_logger = "0"
 futures = "0"
-handlebars = "4"
+handlebars = "5"
 itertools = "0"
 linemux = "0"
 log = "0"
