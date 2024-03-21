@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "1.2.3"
+version = "1.3.0"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -27,8 +27,10 @@ log = "0"
 regex = "1"
 reqwest = { version = "0", features = [
   "brotli",
+  "charset",
   "deflate",
   "gzip",
+  "http2",
   "json",
   "rustls-tls",
   "trust-dns",
