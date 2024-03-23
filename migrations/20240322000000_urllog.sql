@@ -2,8 +2,8 @@
 
 create table if not exists url
 (
-    id integer primary key autoincrement,
-    seen integer not null,
+    id serial primary key,
+    seen bigint not null,
     channel text not null,
     nick text not null,
     url text not null
@@ -15,17 +15,17 @@ create index url_url on url(url);
 
 create table url_changed
 (
-    last integer not null
+    last bigint not null
 );
 insert into url_changed values (0);
 
 create table url_meta
 (
-    id integer primary key autoincrement,
+    id serial primary key,
     url_id integer unique not null,
     lang text,
     title text,
-    desc text,
+    descr text,
     foreign key(url_id) references url(id)
         on update cascade
         on delete cascade
