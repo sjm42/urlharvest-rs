@@ -8,8 +8,7 @@ use itertools::Itertools;
 use log::*;
 use regex::Regex;
 use serde::Deserialize;
-use sqlx::{Connection, SqliteConnection};
-use std::{fmt::Display, net::SocketAddr, path::Path, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc};
 use warp::Filter; // provides `try_next`
 
 use urlharvest::*;
@@ -40,8 +39,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Just check and init the database if necessary,
     // and then drop the connection immediately.
-    let db = start_db(&cfg).await?;
-    drop(db);
+    {
+        let _db = start_db(&cfg).await?;
+    }
 
     // Now it's time for some iterator porn.
     let (
@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path::end())
         .map(move || my_response(TEXT_HTML, index_html.clone()));
 
-    let db_search = Arc::new(cfg.db_file.clone());
+    let db_search = Arc::new(cfg.db_url.clone());
     let db_rm_url = db_search.clone();
     let db_rm_meta = db_search.clone();
     let a_hb = Arc::new(hb_reg);
@@ -180,17 +180,17 @@ const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(s
     group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
     url, url_meta.title from url as u \
     inner join url_meta on url_meta.url_id = u.id \
-    where lower(channel) like ? \
-    and lower(nick) like ? \
-    and lower(url) like ? \
-    and lower(url_meta.title) like ? \
+    where lower(channel) like $1 \
+    and lower(nick) like $2 \
+    and lower(url) like $3 \
+    and lower(url_meta.title) like $4 \
     group by url \
     order by max(seen) desc \
     limit 255";
 
 #[derive(Debug, sqlx::FromRow)]
 struct DbRead {
-    id: i64,
+    id: i32,
     seen_first: i64,
     seen_last: i64,
     seen_count: i64,
@@ -200,14 +200,11 @@ struct DbRead {
     title: String,
 }
 
-async fn search<S1>(
-    db: Arc<S1>,
+async fn search(
+    db: Arc<String>,
     hb_reg: Arc<Handlebars<'_>>,
     params: SearchParam,
-) -> anyhow::Result<String>
-where
-    S1: AsRef<str> + Display,
-{
+) -> anyhow::Result<String> {
     info!("search({params:?})");
     let chan = params.chan.sql_search();
     let nick = params.nick.sql_search();
@@ -222,13 +219,13 @@ where
     let mut html = String::with_capacity(DEFAULT_REPLY_CAP);
     html.push_str(&html_header);
 
-    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
+    let dbc = sqlx::PgPool::connect(&db).await?;
     let mut st_s = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
         .bind(&chan)
         .bind(&nick)
         .bind(&url)
         .bind(&title)
-        .fetch(&mut dbc);
+        .fetch(&dbc);
 
     while let Some(row) = st_s.try_next().await? {
         let mut tpl_data_row = serde_json::value::Map::new();
@@ -266,48 +263,36 @@ pub struct RemoveParam {
     id: String,
 }
 
-const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = ?)";
+const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = $1)";
 
-async fn remove_url<S1>(db: Arc<S1>, params: RemoveParam) -> anyhow::Result<String>
-where
-    S1: AsRef<str> + Display,
-{
+async fn remove_url(db: Arc<String>, params: RemoveParam) -> anyhow::Result<String> {
     info!("remove_url({params:?})");
-    let id = params.id.parse::<i64>().unwrap_or_default();
+    let id = params.id.parse::<i32>().unwrap_or_default();
     info!("Remove url id {id}");
 
-    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
-    let db_res = sqlx::query(SQL_REMOVE_URL)
-        .bind(id)
-        .execute(&mut dbc)
-        .await?;
+    let dbc = sqlx::PgPool::connect(&db).await?;
+    let db_res = sqlx::query(SQL_REMOVE_URL).bind(id).execute(&dbc).await?;
     let n_rows = db_res.rows_affected();
 
     let msg = format!("Removed #{n_rows}");
     info!("{msg}");
-    db_mark_change(&mut dbc).await?;
+    db_mark_change(&dbc).await?;
     Ok(msg)
 }
 
-const SQL_REMOVE_META: &str = "delete from url_meta where url_id = ?";
+const SQL_REMOVE_META: &str = "delete from url_meta where url_id = $1";
 
-async fn remove_meta<S1>(db: Arc<S1>, params: RemoveParam) -> anyhow::Result<String>
-where
-    S1: AsRef<str> + Display,
-{
+async fn remove_meta(db: Arc<String>, params: RemoveParam) -> anyhow::Result<String> {
     info!("remove_meta({params:?})");
-    let id = params.id.parse::<i64>().unwrap_or_default();
+    let id = params.id.parse::<i32>().unwrap_or_default();
     info!("Remove meta id {id}");
 
-    let mut dbc = SqliteConnection::connect(&format!("sqlite:{}", db.as_ref())).await?;
-    let _db_res = sqlx::query(SQL_REMOVE_META)
-        .bind(id)
-        .execute(&mut dbc)
-        .await?;
+    let dbc = sqlx::PgPool::connect(&db).await?;
+    let _db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&dbc).await?;
 
     let msg = "Refreshing".into();
     info!("{msg}");
-    db_mark_change(&mut dbc).await?;
+    db_mark_change(&dbc).await?;
     Ok(msg)
 }
 

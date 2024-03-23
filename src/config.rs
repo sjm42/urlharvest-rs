@@ -56,7 +56,7 @@ impl OptsCommon {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfigCommon {
     pub irc_log_dir: String,
-    pub db_file: String,
+    pub db_url: String,
     pub template_dir: String,
     pub html_dir: String,
     pub regex_log: String,
@@ -74,7 +74,6 @@ impl ConfigCommon {
         debug!("Reading config file {}", &opts.config_file);
         let mut config: ConfigCommon =
             serde_json::from_reader(BufReader::new(File::open(&opts.config_file)?))?;
-        config.db_file = shellexpand::full(&config.db_file)?.into_owned();
         config.irc_log_dir = shellexpand::full(&config.irc_log_dir)?.into_owned();
         config.template_dir = shellexpand::full(&config.template_dir)?.into_owned();
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();

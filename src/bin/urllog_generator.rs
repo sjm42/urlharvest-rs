@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{cfg:#?}");
 
-    let mut db = start_db(&cfg).await?;
+    let mut dbc = start_db(&cfg).await?;
 
     let tera_dir = &cfg.template_dir;
     info!("Template directory: {tera_dir}");
@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut latest_db: i64 = 0;
     loop {
-        let db_ts = db_last_change(&mut db).await?;
+        let db_ts = db_last_change(&dbc).await?;
         if db_ts <= latest_db {
             trace!("Nothing new in DB.");
             sleep(Duration::new(SLEEP_IDLE, 0)).await;
@@ -55,18 +55,18 @@ async fn main() -> anyhow::Result<()> {
         }
         latest_db = db_ts;
 
-        if let Err(e) = generate_pages(&mut db, &tera, &cfg.html_dir).await {
+        if let Err(e) = generate_pages(&mut dbc, &tera, &cfg.html_dir).await {
             error!("Page generate error: {e}");
         }
         sleep(Duration::new(SLEEP_BUSY, 0)).await;
     }
 }
 
-async fn generate_pages(db: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::Result<()> {
+async fn generate_pages(dbc: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::Result<()> {
     let mut now = Utc::now();
     let ts_limit = now.timestamp() - URL_EXPIRE;
     info!("Generating URL logs starting from {}", ts_limit.ts_long());
-    let ctx = generate_ctx(db, ts_limit).await?;
+    let ctx = generate_ctx(dbc, ts_limit).await?;
     info!(
         "Database read took {} ms.",
         Utc::now().signed_duration_since(now).num_milliseconds()
@@ -95,7 +95,7 @@ async fn generate_pages(db: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::
 
 #[derive(Debug, FromRow)]
 struct DbRead {
-    id: i64,
+    id: i32,
     seen_first: i64,
     seen_last: i64,
     seen_cnt: i64,
@@ -134,22 +134,25 @@ impl fmt::Display for CtxData {
     }
 }
 
-const SQL_URL: &str = "select min(url.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
-    channel, nick, url, url_meta.title from url \
+const SQL_URL: &str = "select min(url.id) as id, \
+    min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+    channel, string_agg(nick, ' ') as nick, \
+    url, any_value(url_meta.title) as title from url \
     inner join url_meta on url_meta.url_id = url.id \
     group by channel, url \
-    having max(seen) > ? \
+    having max(seen) > $1 \
     order by max(seen) desc";
 
-const SQL_UNIQ: &str = "select min(url.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
-    group_concat(channel, ' ') as channel, group_concat(nick, ' ') as nick, \
-    url, url_meta.title from url \
+const SQL_UNIQ: &str = "select min(url.id) as id, \
+    min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
+    string_agg(channel, ' ') as channel, string_agg(nick, ' ') as nick, \
+    url, any_value(url_meta.title) as title from url \
     inner join url_meta on url_meta.url_id = url.id \
     group by url \
-    having max(seen) > ? \
+    having max(seen) > $1 \
     order by max(seen) desc";
 
-async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
+async fn generate_ctx(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
     let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
     for k in all::<CtxData>() {
         let v: Vec<String> = Vec::with_capacity(VEC_SZ);
@@ -163,7 +166,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
 
     let mut st_url = sqlx::query_as::<_, DbRead>(SQL_URL)
         .bind(ts_limit)
-        .fetch(&mut db.dbc);
+        .fetch(&dbc.dbc);
 
     while let Some(row) = st_url.try_next().await? {
         data.get_mut(&CtxData::id)
@@ -201,7 +204,7 @@ async fn generate_ctx(db: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Con
 
     let mut st_uniq = sqlx::query_as::<_, DbRead>(SQL_UNIQ)
         .bind(ts_limit)
-        .fetch(&mut db.dbc);
+        .fetch(&dbc.dbc);
 
     while let Some(row) = st_uniq.try_next().await? {
         data.get_mut(&CtxData::uniq_id)

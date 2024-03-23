@@ -21,7 +21,7 @@ enum ProcessMode {
 
 #[derive(Debug, sqlx::FromRow)]
 struct NoMeta {
-    id: i64,
+    id: i32,
     url: String,
     seen: i64,
 }
@@ -34,17 +34,17 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 
-    let mut db = start_db(&cfg).await?;
-    db.update_change = true;
+    let mut dbc = start_db(&cfg).await?;
+    dbc.update_change = true;
 
     if opts.meta_backlog {
-        process_meta(&mut db, ProcessMode::Backlog).await
+        process_meta(&dbc, ProcessMode::Backlog).await
     } else {
-        process_meta(&mut db, ProcessMode::Live).await
+        process_meta(&dbc, ProcessMode::Live).await
     }
 }
 
-async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
+async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     let order = match mode {
         ProcessMode::Backlog => "asc",
         ProcessMode::Live => "desc",
@@ -68,7 +68,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     let mut latest_ts: i64 = 0;
     loop {
         if mode == ProcessMode::Live {
-            let db_ts = db_last_change(db).await?;
+            let db_ts = db_last_change(dbc).await?;
             if db_ts <= latest_ts {
                 trace!("Nothing new in DB.");
                 sleep(Duration::new(SLEEP_POLL, 0)).await;
@@ -82,7 +82,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
             let mut ids = Vec::with_capacity(BATCH_SIZE);
             let mut seen_i = 0;
             {
-                let mut st_nometa = sqlx::query_as::<_, NoMeta>(&sql_nometa).fetch(&mut db.dbc);
+                let mut st_nometa = sqlx::query_as::<_, NoMeta>(&sql_nometa).fetch(&dbc.dbc);
                 while let Some(row) = st_nometa.try_next().await? {
                     ids.push((row.id, row.url));
                     seen_i = row.seen;
@@ -96,7 +96,7 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
                 info!("*** PROCESSING *** at {}", &seen_i.ts_short_y());
             }
             for id in &ids {
-                if let Err(e) = update_meta(db, id.0, &id.1).await {
+                if let Err(e) = update_meta(dbc, id.0, &id.1).await {
                     error!("URL meta update error: {e:?}");
                 }
             }
@@ -106,8 +106,8 @@ async fn process_meta(db: &mut DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Result<()> {
-    let (mut title, lang, desc) = match get_text_body(url_s).await {
+pub async fn update_meta(dbc: &DbCtx, url_id: i32, url_s: &str) -> anyhow::Result<()> {
+    let (mut title, lang, descr) = match get_text_body(url_s).await {
         Err(e) => (
             format!("(URL fetch error: {e:?})"),
             STR_ERR.into(),
@@ -148,16 +148,18 @@ pub async fn update_meta(db: &mut DbCtx, url_id: i64, url_s: &str) -> anyhow::Re
         }
     }
 
-    info!("URL metadata:\nid: {url_id}\nurl: {url_s}\nlang: {lang}\ntitle: {title}\ndesc: {desc}",);
+    info!(
+        "URL metadata:\nid: {url_id}\nurl: {url_s}\nlang: {lang}\ntitle: {title}\ndescr: {descr}",
+    );
     info!(
         "Inserted {} row(s)",
         db_add_meta(
-            db,
+            dbc,
             &MetaCtx {
                 url_id,
                 lang,
                 title,
-                desc,
+                descr,
             },
         )
         .await?
