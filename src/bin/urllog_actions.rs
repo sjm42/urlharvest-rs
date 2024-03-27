@@ -177,8 +177,8 @@ pub struct SearchParam {
 }
 
 const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
-    group_concat(channel, ' ') as channels, group_concat(nick, ' ') as nicks, \
-    url, url_meta.title from url as u \
+    string_agg(channel, ' ') as channels, string_agg(nick, ' ') as nicks, \
+    url, any_value(url_meta.title) as title from url as u \
     inner join url_meta on url_meta.url_id = u.id \
     where lower(channel) like $1 \
     and lower(nick) like $2 \
