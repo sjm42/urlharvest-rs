@@ -1,15 +1,16 @@
 // bin/urllog_actions.rs
 
+use std::{net::SocketAddr, path::Path, sync::Arc};
+
 use anyhow::anyhow;
 use clap::Parser;
+// provides `try_next`
 use futures::TryStreamExt;
-use handlebars::{to_json, Handlebars};
+use handlebars::{Handlebars, to_json};
 use itertools::Itertools;
-use log::*;
 use regex::Regex;
 use serde::Deserialize;
-use std::{net::SocketAddr, path::Path, sync::Arc};
-use warp::Filter; // provides `try_next`
+use warp::Filter;
 
 use urlharvest::*;
 
@@ -32,7 +33,7 @@ const REQ_PATH_REMOVE_META: &str = "remove_meta";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::parse();
-    opts.finish()?;
+    opts.finalize()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
@@ -55,14 +56,14 @@ async fn main() -> anyhow::Result<()> {
         &cfg.tpl_search_result_row,
         &cfg.tpl_search_result_footer,
     ]
-    .iter()
-    .map(|t| {
-        // template names are relative to template_dir
-        // hence we construct full paths here
-        Path::new(&cfg.template_dir).join(*t)
-    })
-    .collect_tuple()
-    .ok_or_else(|| anyhow!("Template iteration failed"))?;
+        .iter()
+        .map(|t| {
+            // template names are relative to template_dir
+            // hence we construct full paths here
+            Path::new(&cfg.template_dir).join(*t)
+        })
+        .collect_tuple()
+        .ok_or_else(|| anyhow!("Template iteration failed"))?;
 
     // Create Handlebars registry
     let mut hb_reg = Handlebars::new();
@@ -158,9 +159,9 @@ fn my_response<S1, S2>(
     resp_type: S1,
     resp_body: S2,
 ) -> Result<warp::http::Response<String>, warp::http::Error>
-where
-    S1: AsRef<str>,
-    S2: AsRef<str>,
+    where
+        S1: AsRef<str>,
+        S2: AsRef<str>,
 {
     warp::http::Response::builder()
         .header("cache-control", "no-store")
@@ -239,10 +240,10 @@ async fn search(
             ("url", row.url.esc_quot()),
             ("title", row.title.esc_et_lt_gt()),
         ]
-        .iter()
-        .for_each(|(k, v)| {
-            tpl_data_row.insert(k.to_string(), to_json(v));
-        });
+            .iter()
+            .for_each(|(k, v)| {
+                tpl_data_row.insert(k.to_string(), to_json(v));
+            });
         // debug!("Result row:\n{tpl_data_row:#?}");
         html.push_str(&hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
     }

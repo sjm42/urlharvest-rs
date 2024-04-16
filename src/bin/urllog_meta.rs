@@ -2,8 +2,7 @@
 
 use clap::Parser;
 use futures::TryStreamExt;
-use log::*;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 use urlharvest::*;
 
@@ -29,7 +28,7 @@ struct NoMeta {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::parse();
-    opts.finish()?;
+    opts.finalize()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);

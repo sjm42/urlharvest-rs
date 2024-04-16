@@ -1,9 +1,11 @@
 // config.rs
 
-use clap::Parser;
-use log::*;
-use serde::{Deserialize, Serialize};
 use std::{env, fs::File, io::BufReader, net::SocketAddr};
+
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+
+use crate::*;
 
 #[derive(Debug, Clone, Parser)]
 pub struct OptsCommon {
@@ -21,28 +23,30 @@ pub struct OptsCommon {
     #[arg(short, long)]
     pub meta_backlog: bool,
 }
+
 impl OptsCommon {
-    pub fn finish(&mut self) -> anyhow::Result<()> {
+    pub fn finalize(&mut self) -> anyhow::Result<()> {
         self.config_file = shellexpand::full(&self.config_file)?.into_owned();
         Ok(())
     }
-    pub fn get_loglevel(&self) -> LevelFilter {
+
+    pub fn get_loglevel(&self) -> Level {
         if self.trace {
-            LevelFilter::Trace
+            Level::TRACE
         } else if self.debug {
-            LevelFilter::Debug
+            Level::DEBUG
         } else if self.verbose {
-            LevelFilter::Info
+            Level::INFO
         } else {
-            LevelFilter::Error
+            Level::ERROR
         }
     }
+
+
     pub fn start_pgm(&self, name: &str) {
-        env_logger::Builder::new()
-            .filter_module(env!("CARGO_PKG_NAME"), self.get_loglevel())
-            .filter_module(name, self.get_loglevel())
-            // .filter_level(self.get_loglevel())
-            .format_timestamp_secs()
+        tracing_subscriber::fmt()
+            .with_max_level(self.get_loglevel())
+            .with_target(false)
             .init();
 
         info!("Starting up {name} v{}...", env!("CARGO_PKG_VERSION"));
@@ -69,6 +73,7 @@ pub struct ConfigCommon {
     pub tpl_search_result_footer: String,
     pub url_blacklist: Vec<String>,
 }
+
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
         debug!("Reading config file {}", &opts.config_file);

@@ -1,18 +1,21 @@
 // bin/urllog_generator.rs
 
+use std::{collections::HashMap, fmt, fs};
+
 use anyhow::{anyhow, bail};
 use chrono::*;
 use clap::Parser;
 use enum_iterator::{all, Sequence};
-use futures::TryStreamExt; // provides `try_next`
-use log::*;
+// provides `try_next`
+use futures::TryStreamExt;
 use sqlx::FromRow;
-use std::{collections::HashMap, fmt, fs};
 use tera::Tera;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
+
 use urlharvest::*;
 
-const URL_EXPIRE: i64 = 7 * 24 * 3600; // A week in seconds
+const URL_EXPIRE: i64 = 7 * 24 * 3600;
+// A week in seconds
 const VEC_SZ: usize = 4096;
 const TPL_SUFFIX: &str = ".tera";
 const SLEEP_IDLE: u64 = 10;
@@ -21,7 +24,7 @@ const SLEEP_BUSY: u64 = 2;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::parse();
-    opts.finish()?;
+    opts.finalize()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{cfg:#?}");
@@ -127,6 +130,7 @@ enum CtxData {
     uniq_url,
     uniq_title,
 }
+
 // with this we get to_string() for free
 impl fmt::Display for CtxData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -1,10 +1,11 @@
 // bin/migrate_db.rs
 
-use clap::Parser;
-use futures::TryStreamExt; // provides `try_next`
-use log::*;
-use sqlx::{Connection, Executor, FromRow, Row, SqliteConnection};
 use std::collections::HashSet;
+
+use clap::Parser;
+// provides `try_next`
+use futures::TryStreamExt;
+use sqlx::{Connection, Executor, FromRow, Row, SqliteConnection};
 
 use urlharvest::*;
 
@@ -39,7 +40,7 @@ const SQL_INSERT_META: &str = "insert into url_meta (url_id, lang, title, descr)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::parse();
-    opts.finish()?;
+    opts.finalize()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{cfg:#?}");

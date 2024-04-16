@@ -1,17 +1,17 @@
 // bin/irssi_urlharvest.rs
 
+use std::{collections::HashMap, ffi::*, time::Instant};
+use std::convert::TryInto;
+use std::fs::{self, DirEntry, File};
+use std::io::{BufRead, BufReader};
+
 use anyhow::anyhow;
 use chrono::*;
 use clap::Parser;
 use itertools::Itertools;
 use linemux::MuxedLines;
-use log::*;
 use regex::Regex;
 use sqlx::Executor;
-use std::convert::TryInto;
-use std::fs::{self, DirEntry, File};
-use std::io::{BufRead, BufReader};
-use std::{collections::HashMap, ffi::*, time::Instant};
 
 use urlharvest::*;
 
@@ -33,7 +33,7 @@ struct IrcCtx {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts = OptsCommon::parse();
-    opts.finish()?;
+    opts.finalize()?;
     opts.start_pgm(env!("CARGO_BIN_NAME"));
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
                         msg,
                     },
                 )
-                .await?;
+                    .await?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -168,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
                 msg: msg.to_owned(),
             },
         )
-        .await?;
+            .await?;
     }
 
     Ok(())
