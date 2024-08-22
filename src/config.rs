@@ -1,9 +1,11 @@
 // config.rs
 
 use std::{env, fs::File, io::BufReader, net::SocketAddr};
-
+use std::collections::HashMap;
+use anyhow::bail;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use chrono_tz::Tz;
 
 use crate::*;
 
@@ -62,6 +64,7 @@ pub struct ConfigCommon {
     pub irc_log_dir: String,
     pub db_url: String,
     pub template_dir: String,
+    pub template_timezone: HashMap<String, String>,
     pub html_dir: String,
     pub regex_log: String,
     pub regex_nick: String,
@@ -72,7 +75,12 @@ pub struct ConfigCommon {
     pub tpl_search_result_row: String,
     pub tpl_search_result_footer: String,
     pub url_blacklist: Vec<String>,
+
+    #[serde(skip)]
+    pub template_tz: Option<HashMap<String, Tz>>,
+
 }
+
 
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
@@ -82,6 +90,21 @@ impl ConfigCommon {
         config.irc_log_dir = shellexpand::full(&config.irc_log_dir)?.into_owned();
         config.template_dir = shellexpand::full(&config.template_dir)?.into_owned();
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();
+
+        let mut template_tz = HashMap::new();
+        // Parse the timezone strings
+        for (k, v) in &config.template_timezone {
+            match v.as_str().parse::<Tz>() {
+                Ok(tz) => {
+                    template_tz.insert(k.to_string(), tz);
+                }
+                Err(e) => {
+                    bail!("error parsing url_dup_timezone \"{k}\": \"{v}\" - {e}");
+                }
+            }
+        }
+        config.template_tz = Some(template_tz);
+
         Ok(config)
     }
 }

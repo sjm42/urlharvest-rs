@@ -4,8 +4,9 @@ use std::{collections::HashMap, fmt, fs};
 
 use anyhow::{anyhow, bail};
 use chrono::*;
+use chrono_tz::Tz;
 use clap::Parser;
-use enum_iterator::{all, Sequence};
+use enum_iterator::Sequence;
 // provides `try_next`
 use futures::TryStreamExt;
 use sqlx::FromRow;
@@ -58,24 +59,25 @@ async fn main() -> anyhow::Result<()> {
         }
         latest_db = db_ts;
 
-        if let Err(e) = generate_pages(&mut dbc, &tera, &cfg.html_dir).await {
+        if let Err(e) = generate_pages(&mut dbc, &tera, &cfg).await {
             error!("Page generate error: {e}");
         }
         sleep(Duration::new(SLEEP_BUSY, 0)).await;
     }
 }
 
-async fn generate_pages(dbc: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow::Result<()> {
+async fn generate_pages(dbc: &mut DbCtx, tera: &Tera, cfg: &ConfigCommon) -> anyhow::Result<()> {
     let mut now = Utc::now();
     let ts_limit = now.timestamp() - URL_EXPIRE;
     info!("Generating URL logs starting from {}", ts_limit.ts_long());
-    let ctx = generate_ctx(dbc, ts_limit).await?;
+    let (db_data, db_data_uniq) = read_db(dbc, ts_limit).await?;
     info!(
         "Database read took {} ms.",
         Utc::now().signed_duration_since(now).num_milliseconds()
     );
 
     now = Utc::now();
+    let html_dir = &cfg.html_dir;
     for template in tera.get_template_names() {
         let basename = template.strip_suffix(TPL_SUFFIX).unwrap_or(template);
         let filename_out = format!("{html_dir}/{basename}");
@@ -84,7 +86,10 @@ async fn generate_pages(dbc: &mut DbCtx, tera: &Tera, html_dir: &str) -> anyhow:
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         );
+        let tz= get_wild(cfg.template_tz.as_ref().unwrap(), basename).unwrap_or(&Tz::UTC);
+
         info!("Generating {filename_out} from {template}");
+        let ctx = generate_ctx(&db_data, &db_data_uniq, tz).await?;
         let template_output = tera.render(template, &ctx)?;
         fs::write(&filename_tmp, template_output)?;
         fs::rename(&filename_tmp, &filename_out)?;
@@ -156,53 +161,21 @@ const SQL_UNIQ: &str = "select min(url.id) as id, \
     having max(seen) > $1 \
     order by max(seen) desc";
 
-async fn generate_ctx(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Context> {
-    let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
-    for k in all::<CtxData>() {
-        let v: Vec<String> = Vec::with_capacity(VEC_SZ);
-        data.insert(k, v);
-    }
-
-    let mut ctx = tera::Context::new();
-    ctx.insert("last_change", &Utc::now().timestamp().ts_long());
+async fn read_db(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<(Vec<DbRead>, Vec<DbRead>)> {
+    let mut db_data = Vec::with_capacity(VEC_SZ);
+    let mut db_data_uniq = Vec::with_capacity(VEC_SZ);
 
     let mut n_rows: usize = 0;
-
     let mut st_url = sqlx::query_as::<_, DbRead>(SQL_URL)
         .bind(ts_limit)
         .fetch(&dbc.dbc);
 
     while let Some(row) = st_url.try_next().await? {
-        data.get_mut(&CtxData::id)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.id.to_string());
-        data.get_mut(&CtxData::seen_first)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.seen_first.ts_short_y());
-        data.get_mut(&CtxData::seen_last)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.seen_last.ts_short());
-        data.get_mut(&CtxData::seen_cnt)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.seen_cnt.to_string());
-        data.get_mut(&CtxData::channel)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.channel.esc_et_lt_gt());
-        data.get_mut(&CtxData::nick)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.nick.esc_et_lt_gt());
-        data.get_mut(&CtxData::url)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.url.esc_quot());
-        data.get_mut(&CtxData::title)
-            .ok_or_else(|| anyhow!("no data"))?
-            .push(row.title.esc_et_lt_gt());
         n_rows += 1;
+        db_data.push(row);
     }
     drop(st_url);
-
     info!("Got {n_rows} rows.");
-    ctx.insert("n_rows", &n_rows);
 
     n_rows = 0;
 
@@ -211,39 +184,89 @@ async fn generate_ctx(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<tera::Co
         .fetch(&dbc.dbc);
 
     while let Some(row) = st_uniq.try_next().await? {
+        n_rows += 1;
+        db_data_uniq.push(row);
+    }
+    drop(st_uniq);
+
+    info!("Got {n_rows} uniq rows.");
+    Ok((db_data, db_data_uniq))
+}
+
+async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz) -> anyhow::Result<tera::Context> {
+    let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
+    // Magic to iterate through all enum variants
+    for k in enum_iterator::all::<CtxData>() {
+        let v: Vec<String> = Vec::with_capacity(VEC_SZ);
+        data.insert(k, v);
+    }
+
+    let mut ctx = tera::Context::new();
+    ctx.insert("last_change", &Utc::now().timestamp().ts_long_tz(tz));
+
+    let mut n_rows: usize = 0;
+    for row in db_data {
+        data.get_mut(&CtxData::id)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.id.to_string());
+        data.get_mut(&CtxData::seen_first)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.seen_first.ts_short_y_tz(tz));
+        data.get_mut(&CtxData::seen_last)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.seen_last.ts_short_tz(tz));
+        data.get_mut(&CtxData::seen_cnt)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.seen_cnt.to_string());
+        data.get_mut(&CtxData::channel)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.channel.clone().esc_et_lt_gt());
+        data.get_mut(&CtxData::nick)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.nick.clone().esc_et_lt_gt());
+        data.get_mut(&CtxData::url)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.url.clone().esc_quot());
+        data.get_mut(&CtxData::title)
+            .ok_or_else(|| anyhow!("no data"))?
+            .push(row.title.clone().esc_et_lt_gt());
+        n_rows += 1;
+    }
+    info!("Got {n_rows} rows.");
+    ctx.insert("n_rows", &n_rows);
+
+    n_rows = 0;
+    for row in db_data_uniq {
         data.get_mut(&CtxData::uniq_id)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.id.to_string());
         data.get_mut(&CtxData::uniq_seen_first)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.seen_first.ts_short_y());
+            .push(row.seen_first.ts_short_y_tz(tz));
         data.get_mut(&CtxData::uniq_seen_last)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.seen_last.ts_short());
+            .push(row.seen_last.ts_short_tz(tz));
         data.get_mut(&CtxData::uniq_seen_cnt)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.seen_cnt.to_string());
         data.get_mut(&CtxData::uniq_channel)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.channel.esc_et_lt_gt().sort_dedup_br());
+            .push(row.channel.clone().esc_et_lt_gt().sort_dedup_br());
         data.get_mut(&CtxData::uniq_nick)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.nick.esc_et_lt_gt().sort_dedup_br());
+            .push(row.nick.clone().esc_et_lt_gt().sort_dedup_br());
         data.get_mut(&CtxData::uniq_url)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.url.esc_quot());
+            .push(row.url.clone().esc_quot());
         data.get_mut(&CtxData::uniq_title)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.title.esc_et_lt_gt());
+            .push(row.title.clone().esc_et_lt_gt());
         n_rows += 1;
     }
-    drop(st_uniq);
-
     info!("Got {n_rows} uniq rows.");
     ctx.insert("uniq_n_rows", &n_rows);
 
-    // Magic to iterate through all enum variants
-    for k in all::<CtxData>() {
+    for k in enum_iterator::all::<CtxData>() {
         let k_name = k.to_string();
         ctx.insert(
             k_name.clone(),

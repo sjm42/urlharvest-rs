@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <meta charset="utf-8" />
     <title>#42 URL log for teepee 😘</title>
@@ -41,7 +40,7 @@
 
 <body>
     <h1>#42 URL log for teepee 😘</h1>
-    <h3>Last 7 days -- all timestamps are UTC</h3>
+    <h3>Last 7 days -- all timestamps are in EET time</h3>
     <p>Page updated {{last_change}}</p>
     <hr>
     <table>
@@ -73,5 +72,4 @@
         {% endfor -%}
     </table>
 </body>
-
 </html>

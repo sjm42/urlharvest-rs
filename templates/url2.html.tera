@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <meta charset="utf-8" />
     <title>IRC URL2 log</title>
@@ -42,7 +41,7 @@
 <body>
     <h1>IRC URL2 log</h1>
     <a href="search/">to search page</a>
-    <h3>Last 7 days -- all timestamps are UTC</h3>
+    <h3>Last 7 days -- all timestamps are in EET time</h3>
     <p>Page updated {{last_change}}</p>
     <hr>
     <table>
@@ -105,5 +104,4 @@
         Http.send();
     }
 </script>
-
 </html>

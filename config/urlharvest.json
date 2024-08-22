@@ -2,6 +2,15 @@
     "irc_log_dir": "$HOME/irclogs/ircnet",
     "db_url": "postgres:///url",
     "template_dir": "$HOME/urlharvest/templates",
+    "template_timezone": {
+        "*": "UTC",
+        "42.html": "EET",
+        "42-teepee.html": "EET",
+        "blerp.html": "EET",
+        "paskat_urlit.html": "EET",
+        "url.html": "EET",
+        "url2.html": "EET"
+    },
     "html_dir": "$HOME/urlharvest/html",
     "regex_log": "^(#\\S*)\\.log$",
     "regex_nick": "^[:\\d]+\\s+[<\\*][%@\\~\\&\\+\\s]*([^>\\s]+)>?\\s+",
