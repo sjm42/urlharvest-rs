@@ -2,14 +2,14 @@
 
 [package]
 name = "urlharvest"
-version = "1.6.0"
+version = "1.7.0"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC irssi logs, no bot"
 repository = "https://github.com/sjm42/urlharvest-rs"
 readme = "README.md"
 keywords = ["irc", "url", "harvest", "irssi", "search"]
 license = "MIT OR Apache-2.0"
-edition = "2021"
+edition = "2024"
 resolver = "2"
 
 
@@ -25,24 +25,24 @@ itertools = "0"
 linemux = "0"
 regex = "1"
 reqwest = { version = "0", features = [
-  "brotli",
-  "charset",
-  "deflate",
-  "gzip",
-  "http2",
-  "json",
-  "rustls-tls",
-  "trust-dns",
+    "brotli",
+    "charset",
+    "deflate",
+    "gzip",
+    "http2",
+    "json",
+    "rustls-tls",
+    "trust-dns",
 ], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 shellexpand = { version = "3", features = ["full"] }
 sqlx = { version = "0", features = [
-  "macros",
-  "migrate",
-  "runtime-tokio-rustls",
-  "postgres",
-  "sqlite",
+    "macros",
+    "migrate",
+    "runtime-tokio-rustls",
+    "postgres",
+    "sqlite",
 ] }
 tera = "1"
 tokio = { version = "1", features = ["full"] }
