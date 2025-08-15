@@ -3205,7 +3205,7 @@ dependencies = [
 
 [[package]]
 name = "urlharvest"
-version = "1.7.1"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "build-data",
@@ -3300,6 +3300,7 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
+ "hyper-util",
  "log",
  "mime",
  "mime_guess",
