@@ -3,6 +3,14 @@
 use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use anyhow::anyhow;
+use axum::{
+    body::Body,
+    extract::{Query, State},
+    http::{header, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::*,
+};
+// use axum_macros::debug_handler;
 use clap::Parser;
 // provides `try_next`
 use futures::TryStreamExt;
@@ -10,12 +18,8 @@ use handlebars::{to_json, Handlebars};
 use itertools::Itertools;
 use regex::Regex;
 use serde::Deserialize;
-use warp::Filter;
 
 use urlharvest::*;
-
-const TEXT_PLAIN: &str = "text/plain; charset=utf-8";
-const TEXT_HTML: &str = "text/html; charset=utf-8";
 
 const TPL_INDEX: &str = "index";
 const TPL_RESULT_HEADER: &str = "result_header";
@@ -23,12 +27,57 @@ const TPL_RESULT_ROW: &str = "result_row";
 const TPL_RESULT_FOOTER: &str = "result_footer";
 
 const DEFAULT_REPLY_CAP: usize = 65536;
-
-const REQ_PATH_SEARCH: &str = "search";
 const RE_SEARCH: &str = r"^[-_\.:;/0-9a-zA-Z\?\*\(\)\[\]\{\}\|\\ ]*$";
 
-const REQ_PATH_REMOVE_URL: &str = "remove_url";
-const REQ_PATH_REMOVE_META: &str = "remove_meta";
+struct MyState<'a> {
+    index_html: String,
+    re_search: Regex,
+    hb_reg: Handlebars<'a>,
+    db_url: String,
+}
+
+enum AppError {
+    Params(String),
+    Render(handlebars::RenderError),
+    Sqlx(sqlx::Error),
+    Stream(std::io::Error),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response<Body> {
+        let (status, message) = match self {
+            AppError::Params(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::Render(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Template render error: {e}"),
+            ),
+            AppError::Sqlx(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("SQLx error: {e}"),
+            ),
+            AppError::Stream(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Iterator error: {e}"),
+            ),
+        };
+        (status, [(header::CACHE_CONTROL, "no-store")], message).into_response()
+    }
+}
+impl From<handlebars::RenderError> for AppError {
+    fn from(e: handlebars::RenderError) -> Self {
+        Self::Render(e)
+    }
+}
+impl From<sqlx::Error> for AppError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Sqlx(e)
+    }
+}
+impl From<std::io::Error> for AppError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Stream(e)
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,90 +132,43 @@ async fn main() -> anyhow::Result<()> {
     hb_reg.register_template_file(TPL_RESULT_FOOTER, &tpl_path_search_result_footer)?;
 
     // precompile this regex
-    let re_srch = Regex::new(RE_SEARCH)?;
+    let re_search = Regex::new(RE_SEARCH)?;
 
     let server_addr: SocketAddr = cfg.search_listen;
 
-    // GET / -> index html
-    let req_index = warp::get()
-        .and(warp::path::end())
-        .map(move || my_response(TEXT_HTML, index_html.clone()));
+    let my_state = Arc::new(MyState {
+        index_html: index_html.clone(),
+        re_search,
+        hb_reg,
+        db_url: cfg.db_url.clone(),
+    });
 
-    let db_search = Arc::new(cfg.db_url.clone());
-    let db_rm_url = db_search.clone();
-    let db_rm_meta = db_search.clone();
-    let a_hb = Arc::new(hb_reg);
-    let a_srch = Arc::new(re_srch);
+    let app = Router::new()
+        .route("/", get(get_index).options(options))
+        .route("/search", get(search))
+        .route("/remove_url", get(remove_url))
+        .route("/remove_meta", get(remove_meta))
+        .with_state(my_state);
 
-    let req_search = warp::get()
-        .and(warp::path(REQ_PATH_SEARCH))
-        .and(warp::path::end())
-        .and(warp::query::<SearchParam>())
-        .then(move |s: SearchParam| {
-            let db = db_search.clone();
-            let reg = a_hb.clone();
-            let srch = a_srch.clone();
-            async move {
-                if !validate_search_param(&s, srch) {
-                    return my_response(TEXT_PLAIN, "*** Illegal characters in query*** ");
-                }
-
-                match search(db, reg, s).await {
-                    Ok(result) => my_response(TEXT_HTML, result),
-                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
-                }
-            }
-        });
-
-    let req_remove_url = warp::get()
-        .and(warp::path(REQ_PATH_REMOVE_URL))
-        .and(warp::path::end())
-        .and(warp::query::<RemoveParam>())
-        .then(move |s: RemoveParam| {
-            let db = db_rm_url.clone();
-            async move {
-                match remove_url(db, s).await {
-                    Ok(result) => my_response(TEXT_HTML, result),
-                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
-                }
-            }
-        });
-
-    let req_remove_meta = warp::get()
-        .and(warp::path(REQ_PATH_REMOVE_META))
-        .and(warp::path::end())
-        .and(warp::query::<RemoveParam>())
-        .then(move |s: RemoveParam| {
-            let db = db_rm_meta.clone();
-            async move {
-                match remove_meta(db, s).await {
-                    Ok(result) => my_response(TEXT_HTML, result),
-                    Err(e) => my_response(TEXT_PLAIN, format!("Query error: {e:?}")),
-                }
-            }
-        });
-
-    let req_routes = req_search
-        .or(req_remove_url)
-        .or(req_remove_meta)
-        .or(req_index);
-
-    warp::serve(req_routes).run(server_addr).await;
-    Ok(())
+    let listener = tokio::net::TcpListener::bind(&server_addr).await?;
+    info!("API server listening to {server_addr}");
+    Ok(axum::serve(listener, app.into_make_service()).await?)
 }
 
-fn my_response<S1, S2>(
-    resp_type: S1,
-    resp_body: S2,
-) -> Result<warp::http::Response<String>, warp::http::Error>
-where
-    S1: AsRef<str>,
-    S2: AsRef<str>,
-{
-    warp::http::Response::builder()
-        .header("cache-control", "no-store")
-        .header("content-type", resp_type.as_ref())
-        .body(resp_body.as_ref().into())
+async fn options<'a>(State(_state): State<Arc<MyState<'a>>>) -> Response<Body> {
+    (
+        StatusCode::OK,
+        [
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (header::ACCESS_CONTROL_ALLOW_METHODS, "get,post"),
+            (header::ACCESS_CONTROL_ALLOW_HEADERS, "content-type"),
+        ],
+    )
+        .into_response()
+}
+
+async fn get_index<'a>(State(state): State<Arc<MyState<'a>>>) -> Response<Body> {
+    (StatusCode::OK, Html(state.index_html.clone())).into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -201,12 +203,21 @@ struct DbRead {
     title: String,
 }
 
-async fn search(
-    db: Arc<String>,
-    hb_reg: Arc<Handlebars<'_>>,
-    params: SearchParam,
-) -> anyhow::Result<String> {
+async fn search<'a>(
+    State(state): State<Arc<MyState<'a>>>,
+    Query(params): Query<SearchParam>,
+) -> Result<Response, AppError> {
     info!("search({params:?})");
+
+    let re = &state.re_search;
+    if !(re.is_match(&params.chan)
+        && re.is_match(&params.nick)
+        && re.is_match(&params.url)
+        && re.is_match(&params.title))
+    {
+        return Err(AppError::Params("Invalid search parameters".to_string()));
+    }
+
     let chan = params.chan.sql_search();
     let nick = params.nick.sql_search();
     let url = params.url.sql_search();
@@ -214,13 +225,13 @@ async fn search(
     info!("Search {chan} {nick} {url} {title}");
 
     let tpl_data_empty = serde_json::value::Map::new();
-    let html_header = hb_reg.render(TPL_RESULT_HEADER, &tpl_data_empty)?;
-    let html_footer = hb_reg.render(TPL_RESULT_FOOTER, &tpl_data_empty)?;
+    let html_header = state.hb_reg.render(TPL_RESULT_HEADER, &tpl_data_empty)?;
+    let html_footer = state.hb_reg.render(TPL_RESULT_FOOTER, &tpl_data_empty)?;
 
     let mut html = String::with_capacity(DEFAULT_REPLY_CAP);
     html.push_str(&html_header);
 
-    let dbc = sqlx::PgPool::connect(&db).await?;
+    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
     let mut st_s = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
         .bind(&chan)
         .bind(&nick)
@@ -245,56 +256,53 @@ async fn search(
             tpl_data_row.insert(k.to_string(), to_json(v));
         });
         // debug!("Result row:\n{tpl_data_row:#?}");
-        html.push_str(&hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
+        html.push_str(&state.hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
     }
 
     html.push_str(&html_footer);
-    Ok(html)
-}
-
-fn validate_search_param(par: &SearchParam, re: Arc<Regex>) -> bool {
-    re.is_match(&par.chan)
-        && re.is_match(&par.nick)
-        && re.is_match(&par.url)
-        && re.is_match(&par.title)
+    Ok(([(header::CACHE_CONTROL, "no-store")], Html(html)).into_response())
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RemoveParam {
     id: String,
 }
-
 const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = $1)";
 
-async fn remove_url(db: Arc<String>, params: RemoveParam) -> anyhow::Result<String> {
+async fn remove_url<'a>(
+    State(state): State<Arc<MyState<'a>>>,
+    Query(params): Query<RemoveParam>,
+) -> Result<Response<Body>, AppError> {
     info!("remove_url({params:?})");
     let id = params.id.parse::<i32>().unwrap_or_default();
     info!("Remove url id {id}");
 
-    let dbc = sqlx::PgPool::connect(&db).await?;
+    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
     let db_res = sqlx::query(SQL_REMOVE_URL).bind(id).execute(&dbc).await?;
     let n_rows = db_res.rows_affected();
 
     let msg = format!("Removed #{n_rows}");
     info!("{msg}");
     db_mark_change(&dbc).await?;
-    Ok(msg)
+    Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())
 }
 
 const SQL_REMOVE_META: &str = "delete from url_meta where url_id = $1";
 
-async fn remove_meta(db: Arc<String>, params: RemoveParam) -> anyhow::Result<String> {
+async fn remove_meta<'a>(
+    State(state): State<Arc<MyState<'a>>>,
+    Query(params): Query<RemoveParam>,
+) -> Result<Response<Body>, AppError> {
     info!("remove_meta({params:?})");
     let id = params.id.parse::<i32>().unwrap_or_default();
     info!("Remove meta id {id}");
 
-    let dbc = sqlx::PgPool::connect(&db).await?;
+    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
     let _db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&dbc).await?;
 
-    let msg = "Refreshing".into();
+    let msg = "Refreshing";
     info!("{msg}");
     db_mark_change(&dbc).await?;
-    Ok(msg)
+    Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())
 }
-
 // EOF
