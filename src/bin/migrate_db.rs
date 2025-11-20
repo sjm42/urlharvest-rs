@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
             error!("url_id is none");
             continue;
         }
-        let url_id = url_id.unwrap();
+        let url_id = url_id.unwrap_or_default();
         url_ids.insert(url_id);
 
         if tx_i >= TX_SZ {
@@ -113,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
             error!("meta_id is none");
             continue;
         }
-        let meta_id = meta_id.unwrap();
+        let meta_id = meta_id.unwrap_or_default();
 
         if tx_i >= TX_SZ {
             debug!("Inserted url_meta #{meta_id}");

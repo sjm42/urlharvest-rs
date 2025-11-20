@@ -11,7 +11,7 @@ use enum_iterator::Sequence;
 use futures::TryStreamExt;
 use sqlx::FromRow;
 use tera::Tera;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 use urlharvest::*;
 
@@ -86,7 +86,10 @@ async fn generate_pages(dbc: &mut DbCtx, tera: &Tera, cfg: &ConfigCommon) -> any
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         );
-        let tz= get_wild(cfg.template_tz.as_ref().unwrap(), basename).unwrap_or(&Tz::UTC);
+        let tz = match cfg.template_tz.as_ref() {
+            Some(map) => get_wild(map, basename).unwrap_or(&Tz::UTC),
+            None => &Tz::UTC,
+        };
 
         info!("Generating {filename_out} from {template}");
         let ctx = generate_ctx(&db_data, &db_data_uniq, tz).await?;
@@ -193,7 +196,11 @@ async fn read_db(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<(Vec<DbRead>,
     Ok((db_data, db_data_uniq))
 }
 
-async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz) -> anyhow::Result<tera::Context> {
+async fn generate_ctx(
+    db_data: &Vec<DbRead>,
+    db_data_uniq: &Vec<DbRead>,
+    tz: &Tz,
+) -> anyhow::Result<tera::Context> {
     let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
     // Magic to iterate through all enum variants
     for k in enum_iterator::all::<CtxData>() {

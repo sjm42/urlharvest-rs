@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "2.0.0"
+version = "2.0.1"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -16,7 +16,6 @@ resolver = "2"
 [dependencies]
 anyhow = "1"
 axum = { version = "0", features = ["http1", "json", "macros", "query", "tracing"] }
-# axum-macros = "0"
 chrono = "0"
 chrono-tz = "0"
 clap = { version = "4", features = ["derive"] }

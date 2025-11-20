@@ -1,11 +1,11 @@
 // config.rs
 
-use std::{env, fs::File, io::BufReader, net::SocketAddr};
-use std::collections::HashMap;
 use anyhow::bail;
+use chrono_tz::Tz;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use chrono_tz::Tz;
+use std::collections::HashMap;
+use std::{env, fs::File, io::BufReader, net::SocketAddr};
 
 use crate::*;
 
@@ -44,7 +44,6 @@ impl OptsCommon {
         }
     }
 
-
     pub fn start_pgm(&self, name: &str) {
         tracing_subscriber::fmt()
             .with_max_level(self.get_loglevel())
@@ -78,9 +77,7 @@ pub struct ConfigCommon {
 
     #[serde(skip)]
     pub template_tz: Option<HashMap<String, Tz>>,
-
 }
-
 
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
