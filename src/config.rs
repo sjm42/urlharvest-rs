@@ -1,12 +1,5 @@
 // config.rs
 
-use anyhow::bail;
-use chrono_tz::Tz;
-use clap::Parser;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::{env, fs::File, io::BufReader, net::SocketAddr};
-
 use crate::*;
 
 #[derive(Debug, Clone, Parser)]
@@ -68,7 +61,7 @@ pub struct ConfigCommon {
     pub regex_log: String,
     pub regex_nick: String,
     pub regex_url: String,
-    pub search_listen: SocketAddr,
+    pub search_listen: net::SocketAddr,
     pub tpl_search_index: String,
     pub tpl_search_result_header: String,
     pub tpl_search_result_row: String,
@@ -82,8 +75,7 @@ pub struct ConfigCommon {
 impl ConfigCommon {
     pub fn new(opts: &OptsCommon) -> anyhow::Result<Self> {
         debug!("Reading config file {}", &opts.config_file);
-        let mut config: ConfigCommon =
-            serde_json::from_reader(BufReader::new(File::open(&opts.config_file)?))?;
+        let mut config: ConfigCommon = serde_json::from_reader(io::BufReader::new(fs::File::open(&opts.config_file)?))?;
         config.irc_log_dir = shellexpand::full(&config.irc_log_dir)?.into_owned();
         config.template_dir = shellexpand::full(&config.template_dir)?.into_owned();
         config.html_dir = shellexpand::full(&config.html_dir)?.into_owned();

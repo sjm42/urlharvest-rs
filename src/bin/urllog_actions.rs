@@ -1,8 +1,7 @@
 // bin/urllog_actions.rs
 
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::sync::Arc;
 
-use anyhow::anyhow;
 use axum::{
     body::Body,
     extract::{Query, State},
@@ -11,13 +10,10 @@ use axum::{
     routing::*,
 };
 // use axum_macros::debug_handler;
-use clap::Parser;
 // provides `try_next`
 use futures::TryStreamExt;
 use handlebars::{to_json, Handlebars};
 use itertools::Itertools;
-use regex::Regex;
-use serde::Deserialize;
 
 use urlharvest::*;
 
@@ -47,18 +43,9 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response<Body> {
         let (status, message) = match self {
             AppError::Params(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Render(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Template render error: {e}"),
-            ),
-            AppError::Sqlx(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("SQLx error: {e}"),
-            ),
-            AppError::Stream(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Iterator error: {e}"),
-            ),
+            AppError::Render(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Template render error: {e}")),
+            AppError::Sqlx(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("SQLx error: {e}")),
+            AppError::Stream(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Iterator error: {e}")),
         };
         (status, [(header::CACHE_CONTROL, "no-store")], message).into_response()
     }
@@ -109,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
     .map(|t| {
         // template names are relative to template_dir
         // hence we construct full paths here
-        Path::new(&cfg.template_dir).join(*t)
+        path::Path::new(&cfg.template_dir).join(*t)
     })
     .collect_tuple()
     .ok_or_else(|| anyhow!("Template iteration failed"))?;
@@ -134,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     // precompile this regex
     let re_search = Regex::new(RE_SEARCH)?;
 
-    let server_addr: SocketAddr = cfg.search_listen;
+    let server_addr: net::SocketAddr = cfg.search_listen;
 
     let my_state = Arc::new(MyState {
         index_html: index_html.clone(),
@@ -190,7 +177,6 @@ const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(s
     group by url \
     order by max(seen) desc \
     limit 255";
-
 #[derive(Debug, sqlx::FromRow)]
 struct DbRead {
     id: i32,
@@ -202,7 +188,6 @@ struct DbRead {
     url: String,
     title: String,
 }
-
 async fn search<'a>(
     State(state): State<Arc<MyState<'a>>>,
     Query(params): Query<SearchParam>,
@@ -268,7 +253,6 @@ pub struct RemoveParam {
     id: String,
 }
 const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = $1)";
-
 async fn remove_url<'a>(
     State(state): State<Arc<MyState<'a>>>,
     Query(params): Query<RemoveParam>,
@@ -288,7 +272,6 @@ async fn remove_url<'a>(
 }
 
 const SQL_REMOVE_META: &str = "delete from url_meta where url_id = $1";
-
 async fn remove_meta<'a>(
     State(state): State<Arc<MyState<'a>>>,
     Query(params): Query<RemoveParam>,
@@ -298,9 +281,10 @@ async fn remove_meta<'a>(
     info!("Remove meta id {id}");
 
     let dbc = sqlx::PgPool::connect(&state.db_url).await?;
-    let _db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&dbc).await?;
+    let db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&dbc).await?;
+    let n_rows = db_res.rows_affected();
 
-    let msg = "Refreshing";
+    let msg = format!("Refreshing (#{n_rows})");
     info!("{msg}");
     db_mark_change(&dbc).await?;
     Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())

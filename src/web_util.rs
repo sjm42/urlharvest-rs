@@ -1,8 +1,5 @@
 // web_util.rs
 
-use std::time::Duration;
-
-use anyhow::anyhow;
 use url::Url;
 
 use crate::*;
@@ -10,11 +7,8 @@ use crate::*;
 const CONN_TIMEOUT: u64 = 5;
 const REQW_TIMEOUT: u64 = 10;
 
-pub async fn get_text_body<S>(url_s: S) -> anyhow::Result<Option<(String, String)>>
-    where
-        S: AsRef<str>,
-{
-    let (body, ct) = get_body(url_s.as_ref()).await?;
+pub async fn get_text_body(url_s: &str) -> anyhow::Result<Option<(String, String)>> {
+    let (body, ct) = get_body(url_s).await?;
 
     if ct.starts_with("text/") {
         Ok(Some((body, ct)))
@@ -24,12 +18,9 @@ pub async fn get_text_body<S>(url_s: S) -> anyhow::Result<Option<(String, String
     }
 }
 
-pub async fn get_body<S>(url_s: S) -> anyhow::Result<(String, String)>
-    where
-        S: AsRef<str>,
-{
+pub async fn get_body(url_s: &str) -> anyhow::Result<(String, String)> {
     // We want a normalized and valid url, IDN handled etc.
-    let url = Url::parse(url_s.as_ref())?;
+    let url = Url::parse(url_s)?;
 
     let c = reqwest::ClientBuilder::new()
         .connect_timeout(Duration::from_secs(CONN_TIMEOUT))
@@ -50,7 +41,7 @@ pub async fn get_body<S>(url_s: S) -> anyhow::Result<(String, String)>
             .ok_or(anyhow!("No content-type in response"))?
             .as_bytes(),
     )
-        .to_string();
+    .to_string();
 
     let body = resp.text().await?;
     Ok((body, ct))

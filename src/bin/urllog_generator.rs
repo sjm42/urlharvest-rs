@@ -1,17 +1,10 @@
 // bin/urllog_generator.rs
 
-use std::{collections::HashMap, fmt, fs};
-
-use anyhow::{anyhow, bail};
-use chrono::*;
-use chrono_tz::Tz;
-use clap::Parser;
 use enum_iterator::Sequence;
 // provides `try_next`
 use futures::TryStreamExt;
 use sqlx::FromRow;
 use tera::Tera;
-use tokio::time::{sleep, Duration};
 
 use urlharvest::*;
 
@@ -169,9 +162,7 @@ async fn read_db(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<(Vec<DbRead>,
     let mut db_data_uniq = Vec::with_capacity(VEC_SZ);
 
     let mut n_rows: usize = 0;
-    let mut st_url = sqlx::query_as::<_, DbRead>(SQL_URL)
-        .bind(ts_limit)
-        .fetch(&dbc.dbc);
+    let mut st_url = sqlx::query_as::<_, DbRead>(SQL_URL).bind(ts_limit).fetch(&dbc.dbc);
 
     while let Some(row) = st_url.try_next().await? {
         n_rows += 1;
@@ -182,9 +173,7 @@ async fn read_db(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<(Vec<DbRead>,
 
     n_rows = 0;
 
-    let mut st_uniq = sqlx::query_as::<_, DbRead>(SQL_UNIQ)
-        .bind(ts_limit)
-        .fetch(&dbc.dbc);
+    let mut st_uniq = sqlx::query_as::<_, DbRead>(SQL_UNIQ).bind(ts_limit).fetch(&dbc.dbc);
 
     while let Some(row) = st_uniq.try_next().await? {
         n_rows += 1;
@@ -196,11 +185,7 @@ async fn read_db(dbc: &mut DbCtx, ts_limit: i64) -> anyhow::Result<(Vec<DbRead>,
     Ok((db_data, db_data_uniq))
 }
 
-async fn generate_ctx(
-    db_data: &Vec<DbRead>,
-    db_data_uniq: &Vec<DbRead>,
-    tz: &Tz,
-) -> anyhow::Result<tera::Context> {
+async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz) -> anyhow::Result<tera::Context> {
     let mut data: HashMap<CtxData, Vec<String>> = HashMap::with_capacity(CTX_NUM);
     // Magic to iterate through all enum variants
     for k in enum_iterator::all::<CtxData>() {
@@ -277,8 +262,7 @@ async fn generate_ctx(
         let k_name = k.to_string();
         ctx.insert(
             k_name.clone(),
-            data.get(&k)
-                .ok_or_else(|| anyhow!("No data for {k_name}"))?,
+            data.get(&k).ok_or_else(|| anyhow!("No data for {k_name}"))?,
         );
     }
 

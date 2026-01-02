@@ -1,16 +1,9 @@
 // bin/irssi_urlharvest.rs
 
-use std::{collections::HashMap, ffi::*, time::Instant};
 use std::convert::TryInto;
-use std::fs::{self, DirEntry, File};
-use std::io::{BufRead, BufReader};
 
-use anyhow::anyhow;
-use chrono::*;
-use clap::Parser;
 use itertools::Itertools;
 use linemux::MuxedLines;
-use regex::Regex;
 use sqlx::Executor;
 
 use urlharvest::*;
@@ -40,8 +33,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut db = start_db(&cfg).await?;
 
-    let mut chans: HashMap<OsString, String> = HashMap::with_capacity(VEC_SZ);
-    let mut log_files: Vec<DirEntry> = Vec::with_capacity(VEC_SZ);
+    let mut chans: HashMap<ffi::OsString, String> = HashMap::with_capacity(VEC_SZ);
+    let mut log_files: Vec<fs::DirEntry> = Vec::with_capacity(VEC_SZ);
 
     debug!("Scanning dir {}", &cfg.irc_log_dir);
     let re_log = Regex::new(&cfg.regex_log)?;
@@ -54,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
                     .file_name()
                     .ok_or_else(|| anyhow!("no filename"))?
                     .to_os_string(),
-                re_match[1].to_owned(),
+                re_match[1].to_string(),
             );
             log_files.push(log_f);
         }
@@ -65,13 +58,13 @@ async fn main() -> anyhow::Result<()> {
     let re_nick = Regex::new(&cfg.regex_nick)?;
     let re_url = Regex::new(&cfg.regex_url)?;
     let mut lmux = MuxedLines::new()?;
-    let chan_unk = CHAN_UNK.to_owned();
+    let chan_unk = CHAN_UNK.to_string();
     if opts.read_history {
         // Seed the database with all the old log lines too
         info!("Reading history...");
 
         // Save the start time to measure elapsed
-        let start_ts = Instant::now();
+        let start_ts = time::Instant::now();
 
         // *** Pre-compile the regexes here for performance!
 
@@ -96,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow!("no filename"))?
                 .to_os_string();
             let chan = chans.get(&log_nopath).unwrap_or(&chan_unk);
-            let reader = BufReader::new(File::open(log_f.path())?);
+            let reader = io::BufReader::new(fs::File::open(log_f.path())?);
             let mut current_ts = Local::now();
             for line in reader.lines() {
                 let msg = line?;
@@ -127,11 +120,11 @@ async fn main() -> anyhow::Result<()> {
                     &re_url,
                     IrcCtx {
                         ts: current_ts.timestamp(),
-                        chan: chan.to_owned(),
+                        chan: chan.to_string(),
                         msg,
                     },
                 )
-                    .await?;
+                .await?;
             }
             // OK all history processed, add the file for live processing from now onwards
             lmux.add_file(log_f.path()).await?;
@@ -150,10 +143,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting live processing...");
     db.update_change = true;
     while let Ok(Some(msg_line)) = lmux.next_line().await {
-        let filename = msg_line
-            .source()
-            .file_name()
-            .unwrap_or_else(|| OsStr::new("NONE"));
+        let filename = msg_line.source().file_name().unwrap_or_else(|| ffi::OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(&chan_unk);
         let msg = msg_line.line();
 
@@ -164,21 +154,17 @@ async fn main() -> anyhow::Result<()> {
             &re_url,
             IrcCtx {
                 ts: Utc::now().timestamp(),
-                chan: chan.to_owned(),
-                msg: msg.to_owned(),
+                chan: chan.to_string(),
+                msg: msg.to_string(),
             },
         )
-            .await?;
+        .await?;
     }
 
     Ok(())
 }
 
-fn detect_hourmin<S: AsRef<str>>(
-    re: &Regex,
-    msg: S,
-    current: DateTime<Local>,
-) -> Option<DateTime<Local>> {
+fn detect_hourmin<S: AsRef<str>>(re: &Regex, msg: S, current: DateTime<Local>) -> Option<DateTime<Local>> {
     let m = re.captures(msg.as_ref())?;
     let (hh, mm) = m
         .iter()
@@ -186,9 +172,7 @@ fn detect_hourmin<S: AsRef<str>>(
         .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
 
-    let naive_ts = current
-        .date_naive()
-        .and_time(NaiveTime::from_hms_opt(hh, mm, 0)?);
+    let naive_ts = current.date_naive().and_time(NaiveTime::from_hms_opt(hh, mm, 0)?);
     if let LocalResult::Single(dt) = Local.from_local_datetime(&naive_ts) {
         Some(dt)
     } else {
@@ -204,8 +188,7 @@ fn detect_daychange<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
 
-    let naive_ts =
-        NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(0, 0, 0)?;
+    let naive_ts = NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(0, 0, 0)?;
     if let LocalResult::Single(dt) = Local.from_local_datetime(&naive_ts) {
         trace!("Found daychange {dt:?}");
         Some(dt)
@@ -221,8 +204,7 @@ fn detect_timestamp<S: AsRef<str>>(re: &Regex, msg: S) -> Option<DateTime<Local>
         .skip(1)
         .filter_map(|m| m?.as_str().parse::<u32>().ok())
         .collect_tuple()?;
-    let naive_ts =
-        NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(hh, mm, ss)?;
+    let naive_ts = NaiveDate::from_ymd_opt(year.try_into().ok()?, mon, day)?.and_hms_opt(hh, mm, ss)?;
     if let LocalResult::Single(new_ts) = Local.from_local_datetime(&naive_ts) {
         trace!("Found timestamp {new_ts:?}");
         Some(new_ts)
@@ -240,7 +222,7 @@ async fn handle_ircmsg(
 ) -> anyhow::Result<()> {
     // Do we have nick in the msg?
     let nick = &match re_nick.captures(&ctx.msg) {
-        Some(nick_match) => nick_match[1].to_owned(),
+        Some(nick_match) => nick_match[1].to_string(),
         None => NICK_UNK.into(),
     };
 
@@ -259,9 +241,9 @@ async fn handle_ircmsg(
                 db,
                 &UrlCtx {
                     ts: ctx.ts,
-                    chan: ctx.chan.to_string(),
-                    nick: nick.to_owned(),
-                    url: url.to_owned(),
+                    chan: ctx.chan.clone(),
+                    nick: nick.to_string(),
+                    url: url.to_string(),
                 },
             )
             .await?

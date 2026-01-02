@@ -1,8 +1,6 @@
 // db_util.rs
 
-use chrono::*;
 use sqlx::{Pool, Postgres};
-use tokio::time::{Duration, sleep};
 
 use crate::*;
 
@@ -60,14 +58,12 @@ pub async fn start_db(c: &ConfigCommon) -> Result<DbCtx, sqlx::Error> {
 }
 
 const SQL_LAST_CHANGE: &str = "select last from url_changed limit 1";
-
 pub async fn db_last_change(db: &DbCtx) -> Result<i64, sqlx::Error> {
-    let ts: (i64, ) = sqlx::query_as(SQL_LAST_CHANGE).fetch_one(&db.dbc).await?;
+    let ts: (i64,) = sqlx::query_as(SQL_LAST_CHANGE).fetch_one(&db.dbc).await?;
     Ok(ts.0)
 }
 
 const SQL_UPDATE_CHANGE: &str = "update url_changed set last = $1";
-
 pub async fn db_mark_change(dbc: &Pool<Postgres>) -> Result<(), sqlx::Error> {
     sqlx::query(SQL_UPDATE_CHANGE)
         .bind(Utc::now().timestamp())
@@ -78,7 +74,6 @@ pub async fn db_mark_change(dbc: &Pool<Postgres>) -> Result<(), sqlx::Error> {
 
 const SQL_INSERT_URL: &str = "insert into url (seen, channel, nick, url) \
     values ($1, $2, $3, $4)";
-
 pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> Result<u64, sqlx::Error> {
     let mut rowcnt = 0;
     let mut retry = 0;
@@ -116,7 +111,6 @@ pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> Result<u64, sqlx::Error>
 
 const SQL_INSERT_META: &str = "insert into url_meta (url_id, lang, title, descr) \
         values ($1, $2, $3, $4)";
-
 pub async fn db_add_meta(db: &DbCtx, m: &MetaCtx) -> Result<u64, sqlx::Error> {
     let res = sqlx::query(SQL_INSERT_META)
         .bind(m.url_id)

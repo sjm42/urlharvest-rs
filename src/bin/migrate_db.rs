@@ -1,8 +1,5 @@
 // bin/migrate_db.rs
 
-use std::collections::HashSet;
-
-use clap::Parser;
 // provides `try_next`
 use futures::TryStreamExt;
 use sqlx::{Connection, Executor, FromRow, Row, SqliteConnection};
@@ -128,10 +125,7 @@ async fn main() -> anyhow::Result<()> {
 
     // update the sequence to actually give unique values
     // since url(id) were just copied from previous db
-    let seq_val: i32 = sqlx::query("select max(id) from url")
-        .fetch_one(&dbc.dbc)
-        .await?
-        .get(0);
+    let seq_val: i32 = sqlx::query("select max(id) from url").fetch_one(&dbc.dbc).await?.get(0);
     info!("url id seq: {seq_val}");
     sqlx::query("select setval('url_id_seq', $1)")
         .bind(seq_val)
