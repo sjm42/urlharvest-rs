@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "2.0.2"
+version = "2.0.3"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC"
 repository = "https://github.com/sjm42/urlharvest-rs"
