@@ -5,14 +5,14 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::*,
 };
 // use axum_macros::debug_handler;
 // provides `try_next`
 use futures::TryStreamExt;
-use handlebars::{to_json, Handlebars};
+use handlebars::{Handlebars, to_json};
 use itertools::Itertools;
 
 use urlharvest::*;

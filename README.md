@@ -36,6 +36,22 @@ Install the release binaries to `$HOME/urlharvest/bin/`:
 ./install.sh
 ```
 
+## Development Checks
+
+Before submitting changes, run the standard Cargo checks:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features
+cargo test
+```
+
+Check direct dependency updates with:
+
+```bash
+cargo outdated --root-deps-only
+```
+
 ## Configuration
 
 All binaries read a shared JSON config file, defaulting to `$HOME/urlharvest/config/urlharvest.json`. Override with `-c <path>`.

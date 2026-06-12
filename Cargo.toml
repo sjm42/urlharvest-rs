@@ -2,7 +2,7 @@
 
 [package]
 name = "urlharvest"
-version = "2.0.3"
+version = "2.0.4"
 authors = ["Sami J. Mäkinen <sjm@iki.fi>"]
 description = "URL harvester for IRC"
 repository = "https://github.com/sjm42/urlharvest-rs"
@@ -25,23 +25,24 @@ handlebars = "6"
 itertools = "0"
 linemux = "0"
 regex = "1"
-reqwest = { version = "0", features = [
+reqwest = { version = "0.13", features = [
     "brotli",
     "charset",
     "deflate",
     "gzip",
     "http2",
     "json",
-    "rustls-tls",
-    "trust-dns",
+    "rustls",
+    "hickory-dns",
 ], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 shellexpand = { version = "3", features = ["full"] }
-sqlx = { version = "0", features = [
+sqlx = { version = "0.9", features = [
     "macros",
     "migrate",
-    "runtime-tokio-rustls",
+    "runtime-tokio",
+    "tls-rustls",
     "postgres",
     "sqlite",
 ] }

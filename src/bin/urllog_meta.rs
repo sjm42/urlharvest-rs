@@ -12,6 +12,26 @@ const BATCH_SIZE: usize = 10;
 const SLEEP_POLL: u64 = 2;
 const TITLE_MAX_LEN: usize = 400;
 
+macro_rules! sql_nometa {
+    ($order:literal) => {
+        concat!(
+            "select url.id, url.url, url.seen ",
+            "from url ",
+            "where not exists (",
+            "select null ",
+            "from url_meta ",
+            "where url.id = url_meta.url_id ",
+            ") ",
+            "order by seen ",
+            $order,
+            " limit $1"
+        )
+    };
+}
+
+const SQL_NOMETA_ASC: &str = sql_nometa!("asc");
+const SQL_NOMETA_DESC: &str = sql_nometa!("desc");
+
 #[derive(Debug, PartialEq, Eq)]
 enum ProcessMode {
     Backlog,
@@ -44,25 +64,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
-    let order = match mode {
-        ProcessMode::Backlog => "asc",
-        ProcessMode::Live => "desc",
+    let sql_nometa = match mode {
+        ProcessMode::Backlog => SQL_NOMETA_ASC,
+        ProcessMode::Live => SQL_NOMETA_DESC,
     };
-
-    // find the lines in {table_url} where corresponding line does not exist
-    // in table {url_meta}
-    let sql_nometa = format!(
-        "select url.id, url.url, url.seen \
-        from url \
-        where not exists ( \
-            select null \
-            from url_meta \
-            where url.id = url_meta.url_id \
-        ) \
-        order by seen {order} \
-        limit {sz}",
-        sz = BATCH_SIZE,
-    );
 
     let mut latest_ts: i64 = 0;
     loop {
@@ -81,7 +86,9 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
             let mut ids = Vec::with_capacity(BATCH_SIZE);
             let mut seen_i = 0;
             {
-                let mut st_nometa = sqlx::query_as::<_, NoMeta>(&sql_nometa).fetch(&dbc.dbc);
+                let mut st_nometa = sqlx::query_as::<_, NoMeta>(sql_nometa)
+                    .bind(BATCH_SIZE as i64)
+                    .fetch(&dbc.dbc);
                 while let Some(row) = st_nometa.try_next().await? {
                     ids.push((row.id, row.url));
                     seen_i = row.seen;
@@ -107,18 +114,10 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
 
 pub async fn update_meta(dbc: &DbCtx, url_id: i32, url_s: &str) -> anyhow::Result<()> {
     let (mut title, lang, descr) = match get_text_body(url_s).await {
-        Err(e) => (
-            format!("(URL fetch error: {e:?})"),
-            STR_ERR.into(),
-            STR_ERR.into(),
-        ),
+        Err(e) => (format!("(URL fetch error: {e:?})"), STR_ERR.into(), STR_ERR.into()),
         Ok(None) => (STR_NA.into(), STR_NA.into(), STR_NA.into()),
         Ok(Some((body, _ct))) => match webpage::HTML::from_string(body, None) {
-            Err(e) => (
-                format!("(Webpage HTML error: {e:?})"),
-                STR_ERR.into(),
-                STR_ERR.into(),
-            ),
+            Err(e) => (format!("(Webpage HTML error: {e:?})"), STR_ERR.into(), STR_ERR.into()),
             Ok(html) => (
                 html.title.unwrap_or_else(|| STR_NA.to_owned()),
                 html.language.unwrap_or_else(|| STR_NA.to_owned()),
@@ -147,9 +146,7 @@ pub async fn update_meta(dbc: &DbCtx, url_id: i32, url_s: &str) -> anyhow::Resul
         }
     }
 
-    info!(
-        "URL metadata:\nid: {url_id}\nurl: {url_s}\nlang: {lang}\ntitle: {title}\ndescr: {descr}",
-    );
+    info!("URL metadata:\nid: {url_id}\nurl: {url_s}\nlang: {lang}\ntitle: {title}\ndescr: {descr}",);
     info!(
         "Inserted {} row(s)",
         db_add_meta(

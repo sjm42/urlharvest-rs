@@ -13,7 +13,7 @@ pub use chrono_tz::Tz;
 pub use clap::Parser;
 pub use regex::Regex;
 pub use serde::{Deserialize, Serialize};
-pub use tokio::time::{sleep, Duration};
+pub use tokio::time::{Duration, sleep};
 pub use tracing::*;
 
 pub use config::*;
