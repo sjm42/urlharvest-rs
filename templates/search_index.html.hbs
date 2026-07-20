@@ -10,13 +10,12 @@
 </head>
 
 <body>
-    <label class="theme-selector" for="theme-select">Theme:
-        <select id="theme-select">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-        </select>
-    </label>
+    <fieldset class="theme-selector">
+        <legend>Theme</legend>
+        <label class="theme-option"><input type="radio" name="theme" value="system" checked> System</label>
+        <label class="theme-option"><input type="radio" name="theme" value="light"> Light</label>
+        <label class="theme-option"><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset>
   <h1>URL Log search</h1>
   <p>Wildcards <b>*</b> and <b>?</b> can be used. The search is case insensitive.<br>
     Results are sorted chronologically and limited to first 100 hits. Good luck.</p>

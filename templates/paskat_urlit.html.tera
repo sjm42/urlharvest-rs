@@ -8,13 +8,12 @@
 </head>
 
 <body>
-    <label class="theme-selector" for="theme-select">Theme:
-        <select id="theme-select">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-        </select>
-    </label>
+    <fieldset class="theme-selector">
+        <legend>Theme</legend>
+        <label class="theme-option"><input type="radio" name="theme" value="system" checked> System</label>
+        <label class="theme-option"><input type="radio" name="theme" value="light"> Light</label>
+        <label class="theme-option"><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset>
     <h1>#paskat_urlit URL log</h1>
     <h3>Last 7 days -- all timestamps are in EET time</h3>
     <p>Page updated {{last_change}}</p>

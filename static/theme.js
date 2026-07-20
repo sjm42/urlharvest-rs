@@ -16,28 +16,34 @@
     }
 
     const initializeSelector = () => {
-        const selector = document.getElementById("theme-select");
-        if (!selector) {
+        const controls = document.querySelectorAll('input[name="theme"]');
+        if (controls.length === 0) {
             return;
         }
 
-        selector.value = savedTheme;
-        selector.addEventListener("change", () => {
-            const theme = selector.value;
-            if (theme === "system") {
-                document.documentElement.removeAttribute("data-theme");
-            } else {
-                document.documentElement.dataset.theme = theme;
-            }
-
-            try {
-                if (theme === "system") {
-                    localStorage.removeItem(storageKey);
-                } else {
-                    localStorage.setItem(storageKey, theme);
+        for (const control of controls) {
+            control.checked = control.value === savedTheme;
+            control.addEventListener("change", () => {
+                if (!control.checked) {
+                    return;
                 }
-            } catch (_) { }
-        });
+
+                const theme = control.value;
+                if (theme === "system") {
+                    document.documentElement.removeAttribute("data-theme");
+                } else {
+                    document.documentElement.dataset.theme = theme;
+                }
+
+                try {
+                    if (theme === "system") {
+                        localStorage.removeItem(storageKey);
+                    } else {
+                        localStorage.setItem(storageKey, theme);
+                    }
+                } catch (_) { }
+            });
+        }
     };
 
     if (document.readyState === "loading") {

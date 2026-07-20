@@ -45,7 +45,8 @@ rsync -a static/ "$HOME/urlharvest/html/static/"
 ```
 
 The HTML output directory is expected to be exposed by the web server at `/url2/`, making the browser assets
-available below `/url2/static/`.
+available below `/url2/static/`. Deploy the static files before the updated templates; the pages intentionally rely
+on the shared stylesheet for their table layout as well as their colors.
 
 ## Development Checks
 
@@ -161,9 +162,9 @@ Two template engines are used:
 
 Custom templates can be added to the template directory. Tera templates are automatically discovered by `urllog_generator`; Handlebars templates are referenced by name in the config.
 
-The generated pages and search UI use `static/theme.css` and `static/theme.js`. Their theme selector follows the
-browser's light/dark preference by default and stores an explicit Light or Dark override in local storage. These
-files are deployment assets and are not rewritten during HTML generation.
+The generated pages and search UI use `static/theme.css` and `static/theme.js`. Their horizontal theme control
+follows the browser's light/dark preference by default and stores an explicit Light or Dark override in local
+storage. These files are deployment assets and are not rewritten during HTML generation.
 
 ## License
 
