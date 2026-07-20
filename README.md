@@ -139,8 +139,7 @@ The schema is automatically created/migrated on startup via [sqlx migrations](ht
 - **url_meta** — Fetched page metadata: `(url_id, lang, title, descr)`, one-to-one with url
 
 PostgreSQL triggers publish changes to the `url_db_changed` notification channel. `urllog_meta` and
-`urllog_generator` listen on that channel and reconcile against the latest database state. The legacy `url_changed`
-table remains temporarily for compatibility with external writers and can be dropped after they stop updating it.
+`urllog_generator` listen on that channel and reconcile against the latest database state.
 
 ## Templates
 
