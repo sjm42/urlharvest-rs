@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8" />
     <title>IRC URL log</title>
-    <script src="/url2/static/theme.js"></script>
-    <link rel="stylesheet" href="/url2/static/theme.css">
+    <script src="./static/theme.js"></script>
+    <link rel="stylesheet" href="./static/theme.css">
 </head>
 
 <body>

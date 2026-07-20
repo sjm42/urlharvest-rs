@@ -44,9 +44,9 @@ rsync -a templates/ "$HOME/urlharvest/templates/"
 rsync -a static/ "$HOME/urlharvest/html/static/"
 ```
 
-The HTML output directory is expected to be exposed by the web server at `/url2/`, making the browser assets
-available below `/url2/static/`. Deploy the static files before the updated templates; the pages intentionally rely
-on the shared stylesheet for their table layout as well as their colors.
+The generated pages use relative asset URLs, so the same HTML output directory can be exposed at paths such as
+`/url/` and `/url2/`. Deploy the static files before the updated templates; the pages intentionally rely on the
+shared stylesheet for their table layout as well as their colors.
 
 ## Development Checks
 
