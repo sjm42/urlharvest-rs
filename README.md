@@ -164,7 +164,8 @@ Custom templates can be added to the template directory. Tera templates are auto
 
 The generated pages and search UI use `static/theme.css` and `static/theme.js`. Their horizontal theme control
 follows the browser's light/dark preference by default and stores an explicit Light or Dark override in local
-storage. These files are deployment assets and are not rewritten during HTML generation.
+storage. The URL administration and search pages also use `static/url-actions.js` for their shared browser-side
+actions. These files are deployment assets and are not rewritten during HTML generation.
 
 ## License
 

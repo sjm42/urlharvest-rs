@@ -6,6 +6,7 @@
   <meta charset="utf-8" />
   <title>URL Log search</title>
     <script src="../static/theme.js"></script>
+    <script src="../static/url-actions.js" defer></script>
     <link rel="stylesheet" href="../static/theme.css">
 </head>
 
@@ -19,7 +20,7 @@
   <h1>URL Log search</h1>
   <p>Wildcards <b>*</b> and <b>?</b> can be used. The search is case insensitive.<br>
     Results are sorted chronologically and limited to first 100 hits. Good luck.</p>
-  <form id="search">
+  <form id="search" data-search-url="{{cmd_search}}">
     chan: <input type="text" id="chan" name="chan">
     nick: <input type="text" id="nick" name="nick">
     url: <input type="text" id="url" name="url">
@@ -32,52 +33,5 @@
   </div>
   <br>
 </body>
-
-<script>
-  function search_url(form) {
-    var o = document.getElementById("results");
-    o.innerHTML = "wait...";
-    const Http = new XMLHttpRequest();
-    const params = {
-      chan: form.chan.value,
-      nick: form.nick.value,
-      url: form.url.value,
-      title: form.title.value,
-    };
-    const url = "{{cmd_search}}?" + (new URLSearchParams(params)).toString();
-    console.log("URL: " + url);
-    Http.open("GET", url, true);
-    Http.send();
-    Http.onreadystatechange = (e) => {
-      const html = Http.responseText;
-      console.log("Got HTML:\n" + html);
-      o.innerHTML = "Search results from " + Date() + "<br>" + html + "<br>";
-    }
-  }
-  function remove_url(id) {
-    var o = document.getElementById("status_" + id);
-    o.innerHTML = "removing...";
-    const url = "/url2/search/remove_url?id=" + id;
-    const Http = new XMLHttpRequest();
-    Http.open("GET", url, false);
-    Http.onreadystatechange = (e) => {
-      o.innerHTML = Http.responseText;
-    }
-    Http.send();
-  }
-  function remove_meta(id) {
-    var o = document.getElementById("status_" + id);
-    o.innerHTML = "updating...";
-    var url = "/url2/search/remove_meta?id=" + id;
-    const Http = new XMLHttpRequest();
-    Http.open("GET", url, false);
-    Http.onreadystatechange = (e) => {
-      o.innerHTML = Http.responseText;
-    }
-    Http.send();
-  }
-
-</script>
-
 </html>
 <!-- END search_index -->
