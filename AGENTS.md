@@ -19,7 +19,7 @@ This repository contains one Rust crate, `urlharvest`, for harvesting IRC log UR
 - `cargo clippy --all-targets --all-features` runs Rust lints across library and binaries.
 - `cargo outdated --root-deps-only` checks for direct dependency updates.
 - `cargo run --bin urllog_actions -- -c config/urlharvest.json` runs the search server with the sample config.
-- `./install.sh` installs release binaries under `$HOME/urlharvest/bin/`.
+- `./install.sh` installs the four service binaries under `$HOME/urlharvest/bin/`.
 
 PostgreSQL is required for runtime behavior. The schema is managed by SQLx migrations in `migrations/`.
 

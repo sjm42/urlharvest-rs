@@ -27,12 +27,10 @@ async fn main() -> anyhow::Result<()> {
 
     let tera_dir = &cfg.template_dir;
     info!("Template directory: {tera_dir}");
-    let tera = match Tera::new(&format!("{tera_dir}/*.tera")) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(anyhow!("Tera template parsing error: {e:?}"));
-        }
-    };
+    let mut tera = Tera::new();
+    if let Err(e) = tera.load_from_glob(&format!("{tera_dir}/*.tera")) {
+        return Err(anyhow!("Tera template parsing error: {e:?}"));
+    }
     if tera.get_template_names().count() < 1 {
         error!("No templates found. Exit.");
         bail!("Templates not found");
@@ -267,5 +265,46 @@ async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz
     }
 
     Ok(ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn renders_checked_in_templates() {
+        let template_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/templates");
+        let mut tera = Tera::new();
+        tera.load_from_glob(&format!("{template_dir}/*.tera"))
+            .expect("checked-in Tera templates should parse");
+        let rows = vec![DbRead {
+            id: 1,
+            seen_first: 1,
+            seen_last: 2,
+            seen_cnt: 2,
+            channel: "#42".to_owned(),
+            nick: "test".to_owned(),
+            url: "https://example.com".to_owned(),
+            title: "Example".to_owned(),
+        }];
+        let unique_rows = vec![DbRead {
+            id: 1,
+            seen_first: 1,
+            seen_last: 2,
+            seen_cnt: 2,
+            channel: "#42".to_owned(),
+            nick: "test".to_owned(),
+            url: "https://example.com".to_owned(),
+            title: "Example".to_owned(),
+        }];
+        let context = generate_ctx(&rows, &unique_rows, &Tz::UTC)
+            .await
+            .expect("representative template context should build");
+
+        for template in tera.get_template_names() {
+            tera.render(template, &context)
+                .unwrap_or_else(|e| panic!("checked-in Tera template {template} should render: {e}"));
+        }
+    }
 }
 // EOF

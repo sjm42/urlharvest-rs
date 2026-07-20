@@ -30,7 +30,7 @@ A fifth binary, **migrate_db**, is a one-time tool for migrating data from a leg
 cargo build --release
 ```
 
-Install the release binaries to `$HOME/urlharvest/bin/`:
+Install the four service binaries to `$HOME/urlharvest/bin/`:
 
 ```bash
 ./install.sh
