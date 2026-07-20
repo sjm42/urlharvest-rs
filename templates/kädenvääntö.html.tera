@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Kädenvääntö URL log</title>
+    <script src="./static/theme.js"></script>
+    <link rel="stylesheet" href="./static/theme.css">
+</head>
+
+<body>
+    <fieldset class="theme-selector">
+        <legend>Theme</legend>
+        <label class="theme-option"><input type="radio" name="theme" value="system" checked> System</label>
+        <label class="theme-option"><input type="radio" name="theme" value="light"> Light</label>
+        <label class="theme-option"><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset>
+    <h1>Kädenvääntö URL log</h1>
+    <h3>Last 7 days -- all timestamps are UTC</h3>
+    <p>Page updated {{last_change}}</p>
+    <hr>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Seen First</th>
+            <th>Seen Last</th>
+            <th>Seen#</th>
+            <th>URL</th>
+        </tr>
+        {% for id_i in id -%}
+        {% if channel[loop.index0] == "slack-Kädenvääntö-random" -%}
+        <tr>
+            {% if seen_cnt[loop.index0] != "1" -%}
+            <td>{{id_i}}</td>
+            <td><b>{{seen_first[loop.index0]}}</b></td>
+            <td>{{seen_last[loop.index0]}}</td>
+            <td><b>{{seen_cnt[loop.index0]}}</b></td>
+            {% else -%}
+            <td>{{id_i}}</td>
+            <td>{{seen_first[loop.index0]}}</td>
+            <td>{{seen_last[loop.index0]}}</td>
+            <td>1</td>
+            {% endif -%}
+            <td>{{title[loop.index0]}}<br>
+                <a href="{{url[loop.index0]}}">{{url[loop.index0]}}</a>
+            </td>
+        </tr>
+        {% endif -%}
+        {% endfor -%}
+    </table>
+</body>
+
+</html>
