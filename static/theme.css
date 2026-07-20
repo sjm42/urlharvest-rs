@@ -1,0 +1,102 @@
+:root {
+    color-scheme: light;
+    --page-background: #ffffff;
+    --text-color: #202124;
+    --alternate-row: #f0f0f0;
+    --panel-background: #f0f0f0;
+    --link-color: #0645ad;
+    --visited-link-color: #551a8b;
+    --border-color: #808080;
+    --control-background: #ffffff;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --page-background: #181a1b;
+    --text-color: #e8e6e3;
+    --alternate-row: #25282a;
+    --panel-background: #25282a;
+    --link-color: #8ab4f8;
+    --visited-link-color: #c58af9;
+    --border-color: #777777;
+    --control-background: #25282a;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        color-scheme: dark;
+        --page-background: #181a1b;
+        --text-color: #e8e6e3;
+        --alternate-row: #25282a;
+        --panel-background: #25282a;
+        --link-color: #8ab4f8;
+        --visited-link-color: #c58af9;
+        --border-color: #777777;
+        --control-background: #25282a;
+    }
+}
+
+body {
+    background-color: var(--page-background);
+    color: var(--text-color);
+    font-family: serif;
+}
+
+a:link {
+    color: var(--link-color);
+}
+
+a:visited {
+    color: var(--visited-link-color);
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+}
+
+input,
+button,
+select {
+    background-color: var(--control-background);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.theme-selector {
+    float: right;
+    font-family: sans-serif;
+}
+
+table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    border: 0;
+    width: 90%;
+}
+
+tr:nth-child(even) {
+    background-color: var(--alternate-row);
+}
+
+th,
+td {
+    text-align: left;
+    vertical-align: top;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    padding-left: 8px;
+    padding-right: 8px;
+    font-family: monospace;
+}
+
+td:nth-child(5) {
+    overflow: hidden;
+}
+
+#results {
+    background-color: var(--panel-background);
+    padding: 10px;
+    border: 2px solid var(--border-color);
+}

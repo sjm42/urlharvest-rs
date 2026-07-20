@@ -3,42 +3,18 @@
 <head>
     <meta charset="utf-8" />
     <title>#blerp URL log</title>
-    <style type="text/css">
-        body {
-            background-color: white;
-            font-family: serif;
-        }
-
-        table {
-            display: block;
-            overflow-x: auto;
-            white-space: nowrap;
-            border: 0px;
-            width: 90%;
-        }
-
-        tr:nth-child(even) {
-            background-color: #f0f0f0;
-        }
-
-        th,
-        td {
-            text-align: left;
-            vertical-align: top;
-            padding-top: 3px;
-            padding-bottom: 3px;
-            padding-left: 8px;
-            padding-right: 8px;
-            font-family: monospace;
-        }
-
-        td:nth-child(5) {
-            overflow: hidden;
-        }
-    </style>
+    <script src="/url2/static/theme.js"></script>
+    <link rel="stylesheet" href="/url2/static/theme.css">
 </head>
 
 <body>
+    <label class="theme-selector" for="theme-select">Theme:
+        <select id="theme-select">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+    </label>
     <h1>#blerp URL log</h1>
     <h3>Last 7 days -- all timestamps are in EET time</h3>
     <p>Page updated {{last_change}}</p>

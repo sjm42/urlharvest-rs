@@ -36,6 +36,17 @@ Install the four service binaries to `$HOME/urlharvest/bin/`:
 ./install.sh
 ```
 
+Deploy the templates and browser assets:
+
+```bash
+mkdir -p "$HOME/urlharvest/templates" "$HOME/urlharvest/html/static"
+rsync -a templates/ "$HOME/urlharvest/templates/"
+rsync -a static/ "$HOME/urlharvest/html/static/"
+```
+
+The HTML output directory is expected to be exposed by the web server at `/url2/`, making the browser assets
+available below `/url2/static/`.
+
 ## Development Checks
 
 Before submitting changes, run the standard Cargo checks:
@@ -149,6 +160,10 @@ Two template engines are used:
 - **Handlebars** (`.hbs` files) — Used by `urllog_actions` for the search web UI (index page, result header/row/footer).
 
 Custom templates can be added to the template directory. Tera templates are automatically discovered by `urllog_generator`; Handlebars templates are referenced by name in the config.
+
+The generated pages and search UI use `static/theme.css` and `static/theme.js`. Their theme selector follows the
+browser's light/dark preference by default and stores an explicit Light or Dark override in local storage. These
+files are deployment assets and are not rewritten during HTML generation.
 
 ## License
 
