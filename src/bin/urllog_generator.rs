@@ -3,7 +3,7 @@
 use enum_iterator::Sequence;
 // provides `try_next`
 use futures::TryStreamExt;
-use sqlx::FromRow;
+use sqlx::{FromRow, postgres::PgListener};
 use tera::Tera;
 
 use urlharvest::*;
@@ -12,7 +12,6 @@ const URL_EXPIRE: i64 = 7 * 24 * 3600;
 // A week in seconds
 const VEC_SZ: usize = 4096;
 const TPL_SUFFIX: &str = ".tera";
-const SLEEP_IDLE: u64 = 10;
 const SLEEP_BUSY: u64 = 2;
 
 #[tokio::main]
@@ -40,20 +39,28 @@ async fn main() -> anyhow::Result<()> {
         tera.get_template_names().collect::<Vec<_>>().join(", ")
     );
 
-    let mut latest_db: i64 = 0;
-    loop {
-        let db_ts = db_last_change(&dbc).await?;
-        if db_ts <= latest_db {
-            trace!("Nothing new in DB.");
-            sleep(Duration::new(SLEEP_IDLE, 0)).await;
-            continue;
-        }
-        latest_db = db_ts;
+    let mut listener = PgListener::connect_with(&dbc.dbc).await?;
+    listener.listen(DB_CHANGE_CHANNEL).await?;
 
+    loop {
         if let Err(e) = generate_pages(&mut dbc, &tera, &cfg).await {
             error!("Page generate error: {e}");
+            sleep(Duration::new(SLEEP_BUSY, 0)).await;
+            continue;
         }
+
+        info!("Waiting for database updates");
+        match listener.try_recv().await? {
+            Some(notification) => trace!(
+                "Database update notification from backend {}",
+                notification.process_id()
+            ),
+            None => warn!("Database listener reconnected; reconciling current state"),
+        }
+
+        // Coalesce a burst of writes into one complete regeneration.
         sleep(Duration::new(SLEEP_BUSY, 0)).await;
+        while listener.next_buffered().is_some() {}
     }
 }
 

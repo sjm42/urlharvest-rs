@@ -267,7 +267,6 @@ async fn remove_url<'a>(
 
     let msg = format!("Removed #{n_rows}");
     info!("{msg}");
-    db_mark_change(&dbc).await?;
     Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())
 }
 
@@ -286,7 +285,6 @@ async fn remove_meta<'a>(
 
     let msg = format!("Refreshing (#{n_rows})");
     info!("{msg}");
-    db_mark_change(&dbc).await?;
     Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())
 }
 // EOF

@@ -133,11 +133,14 @@ urllog_actions
 
 ## Database
 
-The schema is automatically created/migrated on startup via [sqlx migrations](https://docs.rs/sqlx/latest/sqlx/migrate/index.html). Three tables:
+The schema is automatically created/migrated on startup via [sqlx migrations](https://docs.rs/sqlx/latest/sqlx/migrate/index.html). The primary tables are:
 
 - **url** — Each row is one sighting: `(id, seen, channel, nick, url)`
 - **url_meta** — Fetched page metadata: `(url_id, lang, title, descr)`, one-to-one with url
-- **url_changed** — Single-row table tracking the last modification timestamp, used by `urllog_meta` and `urllog_generator` to detect changes
+
+PostgreSQL triggers publish changes to the `url_db_changed` notification channel. `urllog_meta` and
+`urllog_generator` listen on that channel and reconcile against the latest database state. The legacy `url_changed`
+table remains temporarily for compatibility with external writers and can be dropped after they stop updating it.
 
 ## Templates
 

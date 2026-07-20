@@ -2,14 +2,13 @@
 
 use clap::Parser;
 use futures::TryStreamExt;
-use tokio::time::{Duration, sleep};
+use sqlx::postgres::PgListener;
 
 use urlharvest::*;
 
 const STR_NA: &str = "(N/A)";
 const STR_ERR: &str = "(Error)";
 const BATCH_SIZE: usize = 10;
-const SLEEP_POLL: u64 = 2;
 const TITLE_MAX_LEN: usize = 400;
 
 macro_rules! sql_nometa {
@@ -53,8 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 
-    let mut dbc = start_db(&cfg).await?;
-    dbc.update_change = true;
+    let dbc = start_db(&cfg).await?;
 
     if opts.meta_backlog {
         process_meta(&dbc, ProcessMode::Backlog).await
@@ -69,20 +67,18 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
         ProcessMode::Live => SQL_NOMETA_DESC,
     };
 
-    let mut latest_ts: i64 = 0;
-    loop {
-        if mode == ProcessMode::Live {
-            let db_ts = db_last_change(dbc).await?;
-            if db_ts <= latest_ts {
-                trace!("Nothing new in DB.");
-                sleep(Duration::new(SLEEP_POLL, 0)).await;
-                continue;
-            }
-            latest_ts = db_ts;
+    let mut listener = match mode {
+        ProcessMode::Backlog => None,
+        ProcessMode::Live => {
+            let mut listener = PgListener::connect_with(&dbc.dbc).await?;
+            listener.listen(DB_CHANGE_CHANNEL).await?;
+            Some(listener)
         }
+    };
 
+    loop {
         info!("Starting {mode:?} processing");
-        {
+        loop {
             let mut ids = Vec::with_capacity(BATCH_SIZE);
             let mut seen_i = 0;
             {
@@ -94,20 +90,32 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
                     seen_i = row.seen;
                 }
             }
-            if mode == ProcessMode::Backlog && ids.is_empty() {
-                // Backlog processing ends eventually, live processing does not.
+            if ids.is_empty() {
                 break;
             }
             if seen_i > 0 {
                 info!("*** PROCESSING *** at {}", &seen_i.ts_short_y());
             }
             for id in &ids {
-                if let Err(e) = update_meta(dbc, id.0, &id.1).await {
-                    error!("URL meta update error: {e:?}");
-                }
+                update_meta(dbc, id.0, &id.1).await?;
             }
         }
-        info!("Polling updates");
+
+        if mode == ProcessMode::Backlog {
+            // Backlog processing ends once all currently missing metadata is handled.
+            break;
+        }
+
+        info!("Waiting for database updates");
+        let listener = listener.as_mut().expect("live mode has a listener");
+        match listener.try_recv().await? {
+            Some(notification) => trace!(
+                "Database update notification from backend {}",
+                notification.process_id()
+            ),
+            None => warn!("Database listener reconnected; reconciling current state"),
+        }
+        while listener.next_buffered().is_some() {}
     }
     Ok(())
 }

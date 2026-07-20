@@ -141,7 +141,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("Starting live processing...");
-    db.update_change = true;
     while let Ok(Some(msg_line)) = lmux.next_line().await {
         let filename = msg_line.source().file_name().unwrap_or_else(|| ffi::OsStr::new("NONE"));
         let chan = chans.get(filename).unwrap_or(&chan_unk);
