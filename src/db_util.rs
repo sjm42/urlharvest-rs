@@ -9,6 +9,7 @@ use crate::*;
 
 const DB_JOB_TIMEOUT: Duration = Duration::from_secs(8);
 pub const DB_CHANGE_CHANNEL: &str = "url_db_changed";
+pub const PAGE_CHANGE_CHANNEL: &str = "url_pages_changed";
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct DbUrl {

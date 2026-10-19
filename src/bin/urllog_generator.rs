@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut listener = PgListener::connect_with(&dbc.dbc).await?;
-    listener.listen(DB_CHANGE_CHANNEL).await?;
+    listener.listen(PAGE_CHANGE_CHANNEL).await?;
 
     loop {
         if let Err(e) = generate_pages(&mut dbc, &tera, &cfg).await {
@@ -51,18 +51,26 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        info!("Waiting for database updates");
+        info!("Waiting for page data updates");
         match listener.try_recv().await? {
             Some(notification) => trace!(
-                "Database update notification from backend {}",
+                "Page data update notification from backend {}",
                 notification.process_id()
             ),
             None => warn!("Database listener reconnected; reconciling current state"),
         }
 
-        // Coalesce a burst of writes into one complete regeneration.
-        sleep(Duration::new(SLEEP_BUSY, 0)).await;
-        while listener.next_buffered().is_some() {}
+        // Read notifications throughout a fixed batching window. next_buffered()
+        // alone does not consume notifications still waiting on the socket.
+        if let Ok(result) = timeout(Duration::from_secs(SLEEP_BUSY), async {
+            while listener.try_recv().await?.is_some() {}
+            warn!("Database listener reconnected; reconciling current state");
+            Ok::<(), sqlx::Error>(())
+        })
+        .await
+        {
+            result?;
+        }
     }
 }
 

@@ -62,8 +62,9 @@ cargo clippy --all-targets --all-features
 cargo test
 ```
 
-Database tests are opt-in and use temporary tables on their own connections. They check transactions and title
-selection before and after a metadata refresh. Run them against a disposable PostgreSQL database with
+Database tests are opt-in and use temporary tables or an isolated fixture schema. They check transactions, title
+selection before and after a metadata refresh, and notification routing. Run them against a disposable PostgreSQL
+database with
 `URLHARVEST_TEST_DATABASE_URL=postgres:///urlharvest_test cargo test -- --ignored`.
 
 Check direct dependency updates with:
@@ -200,8 +201,17 @@ The schema is automatically created/migrated on startup via [sqlx migrations](ht
 - **url** — Each row is one sighting: `(id, seen, channel, nick, url)`
 - **url_meta** — Fetched page metadata: `(url_id, lang, title, descr)`, one-to-one with url
 
-PostgreSQL triggers publish changes to the `url_db_changed` notification channel. `urllog_meta` and
-`urllog_generator` listen on that channel and reconcile against the latest database state.
+PostgreSQL triggers publish all URL and metadata changes to `url_db_changed`, which wakes `urllog_meta`.
+`urllog_generator` listens on `url_pages_changed`: metadata inserts/updates/deletes and URL updates/deletes wake
+the generator, while URL inserts do not. New sightings only enter generated pages once their metadata is stored,
+including fetch-error results, so a raw URL insert no longer causes a redundant generation round. URL deletion and
+manual metadata refresh continue to update pages. Both workers reconcile against the latest database state on
+startup and after listener reconnection. The generator retains a fixed two-second window to batch page-change
+notifications; this batches completed writes rather than waiting for a title fetch to finish.
+
+The notification migration is applied automatically at startup by updated binaries. Restart the updated generator
+to switch its subscription. Existing harvesters need no changes, and the original notification channel remains
+available to older listeners.
 
 To check for legacy metadata rows with null titles:
 
