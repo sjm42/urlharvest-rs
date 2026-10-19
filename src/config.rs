@@ -38,7 +38,7 @@ impl OptsCommon {
     }
 
     pub fn start_pgm(&self, name: &str) {
-        tracing_subscriber::fmt()
+        tracing_fmt()
             .with_max_level(self.get_loglevel())
             .with_target(false)
             .init();

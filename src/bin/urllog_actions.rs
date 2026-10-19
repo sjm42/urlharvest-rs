@@ -1,21 +1,20 @@
 // bin/urllog_actions.rs
 
-use std::sync::Arc;
-
 use axum::{
+    Router,
     body::Body,
     extract::{Query, State},
     http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
-    routing::*,
+    routing::get,
 };
-// use axum_macros::debug_handler;
-// provides `try_next`
-use futures::TryStreamExt;
 use handlebars::{Handlebars, to_json};
-use itertools::Itertools;
 
 use urlharvest::*;
+
+#[cfg(test)]
+#[path = "../../tests/support/mod.rs"]
+mod db_test_support;
 
 const TPL_INDEX: &str = "index";
 const TPL_RESULT_HEADER: &str = "result_header";
@@ -23,13 +22,12 @@ const TPL_RESULT_ROW: &str = "result_row";
 const TPL_RESULT_FOOTER: &str = "result_footer";
 
 const DEFAULT_REPLY_CAP: usize = 65536;
-const RE_SEARCH: &str = r"^[-_\.:;/0-9a-zA-Z\?\*\(\)\[\]\{\}\|\\ ]*$";
+const MAX_SEARCH_BYTES: usize = 4096;
 
 struct MyState<'a> {
     index_html: String,
-    re_search: Regex,
     hb_reg: Handlebars<'a>,
-    db_url: String,
+    dbc: sqlx::PgPool,
 }
 
 enum AppError {
@@ -74,11 +72,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ConfigCommon::new(&opts)?;
     debug!("Config:\n{:#?}", &cfg);
 
-    // Just check and init the database if necessary,
-    // and then drop the connection immediately.
-    {
-        let _db = start_db(&cfg).await?;
-    }
+    let db = start_db(&cfg).await?;
 
     // Now it's time for some iterator porn.
     let (
@@ -118,16 +112,12 @@ async fn main() -> anyhow::Result<()> {
     hb_reg.register_template_file(TPL_RESULT_ROW, &tpl_path_search_result_row)?;
     hb_reg.register_template_file(TPL_RESULT_FOOTER, &tpl_path_search_result_footer)?;
 
-    // precompile this regex
-    let re_search = Regex::new(RE_SEARCH)?;
-
     let server_addr: net::SocketAddr = cfg.search_listen;
 
     let my_state = Arc::new(MyState {
         index_html: index_html.clone(),
-        re_search,
         hb_reg,
-        db_url: cfg.db_url.clone(),
+        dbc: db.dbc,
     });
 
     let app = Router::new()
@@ -166,16 +156,28 @@ pub struct SearchParam {
     title: String,
 }
 
-const SQL_SEARCH: &str = "select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
+fn validate_search(params: &SearchParam) -> Result<(), AppError> {
+    for value in [&params.chan, &params.nick, &params.url, &params.title] {
+        if value.len() > MAX_SEARCH_BYTES || value.chars().any(char::is_control) {
+            return Err(AppError::Params(
+                "Search fields must be at most 4096 bytes and contain no control characters".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+const SQL_SEARCH: &str = "with grouped as ( \
+    select min(u.id) as id, min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_count, \
     string_agg(channel, ' ') as channels, string_agg(nick, ' ') as nicks, \
-    url, any_value(url_meta.title) as title from url as u \
+    url, (array_agg(url_meta.title order by url_meta.id desc))[1] as title from url as u \
     inner join url_meta on url_meta.url_id = u.id \
     where lower(channel) like $1 \
     and lower(nick) like $2 \
     and lower(url) like $3 \
-    and lower(url_meta.title) like $4 \
-    group by url \
-    order by max(seen) desc \
+    group by url) \
+    select * from grouped where lower(title) like $4 \
+    order by seen_last desc \
     limit 255";
 #[derive(Debug, sqlx::FromRow)]
 struct DbRead {
@@ -194,14 +196,7 @@ async fn search<'a>(
 ) -> Result<Response, AppError> {
     info!("search({params:?})");
 
-    let re = &state.re_search;
-    if !(re.is_match(&params.chan)
-        && re.is_match(&params.nick)
-        && re.is_match(&params.url)
-        && re.is_match(&params.title))
-    {
-        return Err(AppError::Params("Invalid search parameters".to_string()));
-    }
+    validate_search(&params)?;
 
     let chan = params.chan.sql_search();
     let nick = params.nick.sql_search();
@@ -216,53 +211,61 @@ async fn search<'a>(
     let mut html = String::with_capacity(DEFAULT_REPLY_CAP);
     html.push_str(&html_header);
 
-    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
     let mut st_s = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
         .bind(&chan)
         .bind(&nick)
         .bind(&url)
         .bind(&title)
-        .fetch(&dbc);
+        .fetch(&state.dbc);
 
     while let Some(row) = st_s.try_next().await? {
-        let mut tpl_data_row = serde_json::value::Map::new();
-        [
-            ("id", row.id.to_string()),
-            ("first_seen", row.seen_first.ts_short_y()),
-            ("last_seen", row.seen_last.ts_short()),
-            ("num_seen", row.seen_count.to_string()),
-            ("chans", row.channels.esc_et_lt_gt().sort_dedup_br()),
-            ("nicks", row.nicks.esc_et_lt_gt().sort_dedup_br()),
-            ("url", row.url.esc_quot()),
-            ("title", row.title.esc_et_lt_gt()),
-        ]
-        .iter()
-        .for_each(|(k, v)| {
-            tpl_data_row.insert(k.to_string(), to_json(v));
-        });
-        // debug!("Result row:\n{tpl_data_row:#?}");
-        html.push_str(&state.hb_reg.render(TPL_RESULT_ROW, &tpl_data_row)?);
+        html.push_str(&render_result_row(&state.hb_reg, &row)?);
     }
 
     html.push_str(&html_footer);
     Ok(([(header::CACHE_CONTROL, "no-store")], Html(html)).into_response())
 }
 
+fn render_result_row(registry: &Handlebars<'_>, row: &DbRead) -> Result<String, handlebars::RenderError> {
+    let mut data = serde_json::value::Map::new();
+    for (key, value) in [
+        ("id", row.id.to_string()),
+        ("first_seen", row.seen_first.ts_short_y()),
+        ("last_seen", row.seen_last.ts_short()),
+        ("num_seen", row.seen_count.to_string()),
+        ("chans", row.channels.esc_et_lt_gt().sort_dedup_br()),
+        ("nicks", row.nicks.esc_et_lt_gt().sort_dedup_br()),
+        ("url", row.url.esc_et_lt_gt().esc_quot()),
+        ("title", row.title.esc_et_lt_gt()),
+    ] {
+        data.insert(key.to_owned(), to_json(value));
+    }
+    registry.render(TPL_RESULT_ROW, &data)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RemoveParam {
     id: String,
 }
+
+fn parse_action_id(value: &str) -> Result<i32, AppError> {
+    value
+        .parse::<i32>()
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| AppError::Params("ID must be a positive 32-bit integer".into()))
+}
+
 const SQL_REMOVE_URL: &str = "delete from url where url in (select url from url where id = $1)";
 async fn remove_url<'a>(
     State(state): State<Arc<MyState<'a>>>,
     Query(params): Query<RemoveParam>,
 ) -> Result<Response<Body>, AppError> {
     info!("remove_url({params:?})");
-    let id = params.id.parse::<i32>().unwrap_or_default();
+    let id = parse_action_id(&params.id)?;
     info!("Remove url id {id}");
 
-    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
-    let db_res = sqlx::query(SQL_REMOVE_URL).bind(id).execute(&dbc).await?;
+    let db_res = sqlx::query(SQL_REMOVE_URL).bind(id).execute(&state.dbc).await?;
     let n_rows = db_res.rows_affected();
 
     let msg = format!("Removed #{n_rows}");
@@ -276,15 +279,155 @@ async fn remove_meta<'a>(
     Query(params): Query<RemoveParam>,
 ) -> Result<Response<Body>, AppError> {
     info!("remove_meta({params:?})");
-    let id = params.id.parse::<i32>().unwrap_or_default();
+    let id = parse_action_id(&params.id)?;
     info!("Remove meta id {id}");
 
-    let dbc = sqlx::PgPool::connect(&state.db_url).await?;
-    let db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&dbc).await?;
+    let db_res = sqlx::query(SQL_REMOVE_META).bind(id).execute(&state.dbc).await?;
     let n_rows = db_res.rows_affected();
 
     let msg = format!("Refreshing (#{n_rows})");
     info!("{msg}");
     Ok(([(header::CACHE_CONTROL, "no-store")], msg).into_response())
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn actions_reject_invalid_ids_before_accessing_the_database() {
+        let state = Arc::new(MyState {
+            index_html: String::new(),
+            hb_reg: Handlebars::new(),
+            dbc: sqlx::PgPool::connect_lazy("postgres://localhost:1/urlharvest_test").unwrap(),
+        });
+        assert_eq!(parse_action_id("42").ok(), Some(42));
+        assert_eq!(parse_action_id("2147483647").ok(), Some(i32::MAX));
+        for id in ["", "abc", "42x", "0", "-1", "2147483648", " 42"] {
+            let params = || Query(RemoveParam { id: id.to_owned() });
+            for result in [
+                remove_url(State(state.clone()), params()).await,
+                remove_meta(State(state.clone()), params()).await,
+            ] {
+                let response = match result {
+                    Ok(_) => panic!("invalid ID {id:?} was accepted"),
+                    Err(error) => error.into_response(),
+                };
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{id:?}");
+                assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            }
+        }
+        assert_eq!(state.dbc.size(), 0);
+    }
+
+    #[test]
+    fn renders_urls_without_interpreting_entities_or_markup() {
+        let mut registry = Handlebars::new();
+        registry.register_escape_fn(handlebars::no_escape);
+        registry
+            .register_template_string(
+                TPL_RESULT_ROW,
+                include_str!("../../templates/search_result_row.html.hbs"),
+            )
+            .unwrap();
+        let url = r#"https://example.com/?a=&copy;&b="><img/src=x>"#;
+        let escaped = "https://example.com/?a=&amp;copy;&amp;b=&quot;&gt;&lt;img/src=x&gt;";
+        let row = DbRead {
+            id: 1,
+            seen_first: 1,
+            seen_last: 2,
+            seen_count: 2,
+            channels: "#test".into(),
+            nicks: "test".into(),
+            url: url.into(),
+            title: "Example".into(),
+        };
+        let html = render_result_row(&registry, &row).unwrap();
+        assert!(html.contains(&format!("<a href=\"{escaped}\">{escaped}</a>")));
+        assert!(!html.contains("<img"));
+        assert_eq!(row.url, url);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires URLHARVEST_TEST_DATABASE_URL pointing at a disposable PostgreSQL database"]
+    async fn search_matches_the_latest_title_and_keeps_all_matching_sightings() {
+        let mut conn = db_test_support::metadata_fixture().await;
+        for (refreshed, expected_title) in [(false, "Current title"), (true, "Refreshed title")] {
+            if refreshed {
+                sqlx::query(SQL_REMOVE_META)
+                    .bind(1_i32)
+                    .execute(&mut conn)
+                    .await
+                    .unwrap();
+                sqlx::query("insert into url_meta (url_id, title) values (1, 'Refreshed title')")
+                    .execute(&mut conn)
+                    .await
+                    .unwrap();
+            }
+            for title in [
+                "%".to_owned(),
+                expected_title.to_lowercase().sql_search(),
+                "%old title%".into(),
+            ] {
+                let rows = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
+                    .bind("%#test%")
+                    .bind("%")
+                    .bind("https://example.com/")
+                    .bind(&title)
+                    .fetch_all(&mut conn)
+                    .await
+                    .unwrap();
+                if title == "%old title%" {
+                    assert!(rows.is_empty());
+                } else {
+                    assert_eq!(rows.len(), 1);
+                    assert_eq!(rows[0].id, 1);
+                    assert_eq!(rows[0].title, expected_title);
+                    assert_eq!(rows[0].seen_count, 2);
+                    assert_eq!(rows[0].seen_first, 20);
+                    assert_eq!(rows[0].seen_last, 30);
+                    assert!(rows[0].nicks.contains("alice"));
+                    assert!(rows[0].nicks.contains("bob"));
+                }
+            }
+        }
+        let rows = sqlx::query_as::<_, DbRead>(SQL_SEARCH)
+            .bind("%#test%")
+            .bind("%")
+            .bind("https://example.com/")
+            .bind("%current title%")
+            .fetch_all(&mut conn)
+            .await
+            .unwrap();
+        assert!(rows.is_empty(), "a superseded title must not match after refresh");
+    }
+
+    #[test]
+    fn search_accepts_channels_unicode_urls_and_sql_punctuation() {
+        assert!(
+            validate_search(&SearchParam {
+                chan: "#42".into(),
+                nick: "Mäkinen".into(),
+                url: "https://example.com/?a=1&b=2".into(),
+                title: "It's 100% ' OR 1=1 --".into(),
+            })
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn search_rejects_controls_and_oversized_fields() {
+        for value in ["a\0b".to_owned(), "a\nb".to_owned(), "é".repeat(2049)] {
+            assert!(
+                validate_search(&SearchParam {
+                    chan: value,
+                    nick: String::new(),
+                    url: String::new(),
+                    title: String::new(),
+                })
+                .is_err()
+            );
+        }
+    }
+}
+
 // EOF

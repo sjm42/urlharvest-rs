@@ -1,12 +1,8 @@
 // bin/migrate_db.rs
 
-// provides `try_next`
-use futures::TryStreamExt;
-use sqlx::{Connection, Executor, FromRow, Row, SqliteConnection};
+use sqlx::{Connection, FromRow, SqliteConnection};
 
 use urlharvest::*;
-
-const TX_SZ: usize = 1024;
 
 const SQL_READ_URL: &str = "select id, seen, channel, nick, url from url";
 const SQL_READ_META: &str = "select url_id, lang, title, desc from url_meta";
@@ -29,10 +25,10 @@ struct DbReadMeta {
 }
 
 const SQL_INSERT_URL: &str = "insert into url (id, seen, channel, nick, url) \
-     values ($1, $2, $3, $4, $5) returning id";
+     values ($1, $2, $3, $4, $5)";
 
 const SQL_INSERT_META: &str = "insert into url_meta (url_id, lang, title, descr) \
-     values ($1, $2, $3, $4) returning id";
+     values ($1, $2, $3, $4)";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,90 +43,47 @@ async fn main() -> anyhow::Result<()> {
     let mut sqlite = SqliteConnection::connect("sqlite:./url.db").await?;
     let mut url_ids: HashSet<i32> = HashSet::with_capacity(1_000_000);
 
-    let mut tx_i = 0;
+    // Keep every write on one connection. An error rolls back the import instead
+    // of committing an incomplete copy; this offline tool must run without writers.
+    let mut tx = dbc.dbc.begin().await?;
     let mut st_read = sqlx::query_as::<_, DbReadUrl>(SQL_READ_URL).fetch(&mut sqlite);
-    dbc.dbc.execute("BEGIN").await?;
     while let Some(row) = st_read.try_next().await? {
-        tx_i += 1;
-
-        // debug!("row:\n{row:#?}");
-        let res = sqlx::query(SQL_INSERT_URL)
+        sqlx::query(SQL_INSERT_URL)
             .bind(row.id)
             .bind(row.seen)
             .bind(&row.channel)
             .bind(&row.nick)
             .bind(&row.url)
-            .fetch_one(&dbc.dbc)
+            .execute(&mut *tx)
             .await?;
-        let url_id: Option<i32> = res.get(0);
-        if url_id.is_none() {
-            error!("url_id is none");
-            continue;
-        }
-        let url_id = url_id.unwrap_or_default();
-        url_ids.insert(url_id);
-
-        if tx_i >= TX_SZ {
-            debug!("Inserted url_id #{url_id}");
-            dbc.dbc.execute("COMMIT").await?;
-            dbc.dbc.execute("BEGIN").await?;
-            tx_i = 0;
-        }
+        url_ids.insert(row.id);
     }
     drop(st_read);
-    dbc.dbc.execute("COMMIT").await?;
 
-    tx_i = 0;
     let mut orphans = 0;
     let mut st_read = sqlx::query_as::<_, DbReadMeta>(SQL_READ_META).fetch(&mut sqlite);
-    dbc.dbc.execute("BEGIN").await?;
     while let Some(row) = st_read.try_next().await? {
         if !url_ids.contains(&row.url_id) {
             orphans += 1;
             continue;
         }
-
-        tx_i += 1;
-        let res = match sqlx::query(SQL_INSERT_META)
+        sqlx::query(SQL_INSERT_META)
             .bind(row.url_id)
             .bind(&row.lang)
             .bind(&row.title)
             .bind(&row.desc)
-            .fetch_one(&dbc.dbc)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                error!("Insert error: {e}");
-                continue;
-            }
-        };
-        let meta_id: Option<i32> = res.get(0);
-        if meta_id.is_none() {
-            error!("meta_id is none");
-            continue;
-        }
-        let meta_id = meta_id.unwrap_or_default();
-
-        if tx_i >= TX_SZ {
-            debug!("Inserted url_meta #{meta_id}");
-            dbc.dbc.execute("COMMIT").await?;
-            dbc.dbc.execute("BEGIN").await?;
-            tx_i = 0;
-        }
+            .execute(&mut *tx)
+            .await?;
     }
     drop(st_read);
-    dbc.dbc.execute("COMMIT").await?;
     info!("Detected {orphans} orphan url_meta lines.");
 
-    // update the sequence to actually give unique values
-    // since url(id) were just copied from previous db
-    let seq_val: i32 = sqlx::query("select max(id) from url").fetch_one(&dbc.dbc).await?.get(0);
-    info!("url id seq: {seq_val}");
-    sqlx::query("select setval('url_id_seq', $1)")
-        .bind(seq_val)
-        .execute(&dbc.dbc)
+    // Explicit IDs do not advance the sequence. Handle an empty source too:
+    // setval(..., 1, false) makes the next generated ID equal to one.
+    sqlx::query("select setval('url_id_seq', coalesce(max(id), 1), max(id) is not null) from url")
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
 
     Ok(())
 }

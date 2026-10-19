@@ -50,6 +50,10 @@ shared stylesheet for their table layout as well as their colors.
 
 ## Development Checks
 
+Common standard-library and dependency imports are explicitly re-exported from `src/lib.rs`, following the sibling
+`sjmb` convention. Library modules use `use crate::*;` and binaries use `use urlharvest::*;`; specialized imports stay
+local to the module that needs them. Library test-only imports are grouped under `#[cfg(test)]` in `src/lib.rs`.
+
 Before submitting changes, run the standard Cargo checks:
 
 ```bash
@@ -57,6 +61,10 @@ cargo fmt --check
 cargo clippy --all-targets --all-features
 cargo test
 ```
+
+Database tests are opt-in and use temporary tables on their own connections. They check transactions and title
+selection before and after a metadata refresh. Run them against a disposable PostgreSQL database with
+`URLHARVEST_TEST_DATABASE_URL=postgres:///urlharvest_test cargo test -- --ignored`.
 
 Check direct dependency updates with:
 
@@ -108,6 +116,19 @@ An example config is provided in `config/urlharvest.json`:
 
 Paths support shell expansion (e.g. `$HOME`).
 
+`urllog_actions` relies on an authenticating reverse proxy. Keep its listener on loopback or a private interface,
+and protect the search UI and both `/remove_url` and `/remove_meta` routes at the proxy. The application provides
+no authentication or authorization. Its existing administration actions use GET requests; proxy authentication
+alone does not provide CSRF protection against requests from an already authenticated browser. Configure the
+proxy/browser access policy accordingly. Removing a URL deletes all sightings of the same URL.
+
+Search accepts Unicode, channel prefixes such as `#`, and URL query punctuation. Each field is limited to 4096
+UTF-8 bytes and cannot contain control characters. SQL parameters remain bound separately from the query text.
+Each generated or search-result group displays the title with the highest metadata ID among its sightings.
+Refreshing a sighting inserts a new metadata row, so its fetched title becomes the group's selected title.
+Search applies its title filter after grouping; counts include all sightings with metadata matching the channel,
+nick, and URL filters, even when their older titles differ.
+
 ## Usage
 
 All binaries share common CLI flags:
@@ -143,6 +164,35 @@ urllog_generator
 urllog_actions
 ```
 
+Metadata fetching is best effort. A shared HTTP client checks HTTPS certificates, accepts only public HTTP/HTTPS
+destinations without embedded credentials, and applies the same destination checks to DNS answers and every
+redirect (at most five). Environment HTTP proxies are disabled so requests cannot bypass that policy. The overall
+fetch deadline is ten seconds. Non-text responses are skipped before reading their bodies; text is limited to
+the first 1 MiB of decompressed bytes and 1 MiB after charset decoding. A truncated page can still supply metadata.
+HTML title, language, and description extraction uses a tokenizer without building or recursively walking a DOM.
+Titles are limited to 400 UTF-8 bytes, language tags to 128, and descriptions to 4096.
+
+Fetch failures are deliberately stored as metadata containing an error title. There are no automatic HTTP retries:
+timeouts and server errors do not reliably predict when a site will recover. Use the refresh action to retry manually.
+The metadata worker is intended to run as a single process.
+Results for URLs removed while fetching are discarded, and an already existing metadata row is kept.
+
+Each daemon uses a shared PostgreSQL pool with at most four connections, a three-second pool acquisition deadline,
+a five-second statement timeout, and a one-second lock timeout. URL inserts have an eight-second overall deadline.
+Failed inserts and log-reader errors terminate the harvester with an error instead of silently continuing. Inserts
+are attempted once because an ambiguous connection failure could otherwise cause duplicate records.
+
+History import uses transactions of up to 1024 log lines. Completed batches remain committed if a later batch fails;
+replaying history can duplicate existing sightings and remains the operator's responsibility. Historical dates use
+the process's local timezone (set `TZ` to match the original logger). During DST fall-back, ambiguous local times use
+the first occurrence because the logs contain no UTC offset. Log files are discovered at startup.
+The log harvester skips malformed URLs, non-HTTP/HTTPS URLs, URLs containing whitespace or control characters,
+and URLs over 2048 UTF-8 bytes. Valid URL strings are preserved as posted, without normalization or truncation.
+
+The legacy `migrate_db` utility imports `./url.db` in one PostgreSQL transaction and rolls back on an insertion error.
+Run it offline without other database writers. It resets the URL ID sequence after copying explicit IDs and also
+handles an empty source database.
+
 ## Database
 
 The schema is automatically created/migrated on startup via [sqlx migrations](https://docs.rs/sqlx/latest/sqlx/migrate/index.html). The primary tables are:
@@ -153,6 +203,14 @@ The schema is automatically created/migrated on startup via [sqlx migrations](ht
 PostgreSQL triggers publish changes to the `url_db_changed` notification channel. `urllog_meta` and
 `urllog_generator` listen on that channel and reconcile against the latest database state.
 
+To check for legacy metadata rows with null titles:
+
+```sql
+SELECT count(*) AS null_title_rows FROM url_meta WHERE title IS NULL;
+```
+
+This counts existing metadata rows with a null title; URLs without a metadata row are a separate backlog.
+
 ## Templates
 
 Two template engines are used:
@@ -161,6 +219,10 @@ Two template engines are used:
 - **Handlebars** (`.hbs` files) — Used by `urllog_actions` for the search web UI (index page, result header/row/footer).
 
 Custom templates can be added to the template directory. Tera templates are automatically discovered by `urllog_generator`; Handlebars templates are referenced by name in the config.
+
+URL fields are HTML-escaped when constructing template data, including ampersands and quotes. This preserves literal
+entity-like text such as `&copy;` in link destinations and prevents URL text from becoming HTML markup. Stored URLs
+are unchanged.
 
 The generated pages and search UI use `static/theme.css` and `static/theme.js`. Their horizontal theme control
 follows the browser's light/dark preference by default and stores an explicit Light or Dark override in local

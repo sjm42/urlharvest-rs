@@ -1,12 +1,14 @@
 // bin/urllog_generator.rs
 
 use enum_iterator::Sequence;
-// provides `try_next`
-use futures::TryStreamExt;
 use sqlx::{FromRow, postgres::PgListener};
 use tera::Tera;
 
 use urlharvest::*;
+
+#[cfg(test)]
+#[path = "../../tests/support/mod.rs"]
+mod db_test_support;
 
 const URL_EXPIRE: i64 = 7 * 24 * 3600;
 // A week in seconds
@@ -147,7 +149,7 @@ impl fmt::Display for CtxData {
 const SQL_URL: &str = "select min(url.id) as id, \
     min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
     channel, string_agg(nick, ' ') as nick, \
-    url, any_value(url_meta.title) as title from url \
+    url, (array_agg(url_meta.title order by url_meta.id desc))[1] as title from url \
     inner join url_meta on url_meta.url_id = url.id \
     group by channel, url \
     having max(seen) > $1 \
@@ -156,7 +158,7 @@ const SQL_URL: &str = "select min(url.id) as id, \
 const SQL_UNIQ: &str = "select min(url.id) as id, \
     min(seen) as seen_first, max(seen) as seen_last, count(seen) as seen_cnt, \
     string_agg(channel, ' ') as channel, string_agg(nick, ' ') as nick, \
-    url, any_value(url_meta.title) as title from url \
+    url, (array_agg(url_meta.title order by url_meta.id desc))[1] as title from url \
     inner join url_meta on url_meta.url_id = url.id \
     group by url \
     having max(seen) > $1 \
@@ -223,7 +225,7 @@ async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz
             .push(row.nick.clone().esc_et_lt_gt());
         data.get_mut(&CtxData::url)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.url.clone().esc_quot());
+            .push(row.url.esc_et_lt_gt().esc_quot());
         data.get_mut(&CtxData::title)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.title.clone().esc_et_lt_gt());
@@ -254,7 +256,7 @@ async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz
             .push(row.nick.clone().esc_et_lt_gt().sort_dedup_br());
         data.get_mut(&CtxData::uniq_url)
             .ok_or_else(|| anyhow!("no data"))?
-            .push(row.url.clone().esc_quot());
+            .push(row.url.esc_et_lt_gt().esc_quot());
         data.get_mut(&CtxData::uniq_title)
             .ok_or_else(|| anyhow!("no data"))?
             .push(row.title.clone().esc_et_lt_gt());
@@ -277,6 +279,72 @@ async fn generate_ctx(db_data: &Vec<DbRead>, db_data_uniq: &Vec<DbRead>, tz: &Tz
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn renders_urls_without_interpreting_entities_or_markup() {
+        let url = r#"https://example.com/?a=&copy;&b="><img/src=x>"#;
+        let escaped = "https://example.com/?a=&amp;copy;&amp;b=&quot;&gt;&lt;img/src=x&gt;";
+        let rows = vec![DbRead {
+            id: 1,
+            seen_first: 1,
+            seen_last: 2,
+            seen_cnt: 2,
+            channel: "#42".into(),
+            nick: "test".into(),
+            url: url.into(),
+            title: "Example".into(),
+        }];
+        let ctx = generate_ctx(&rows, &rows, &Tz::UTC).await.unwrap();
+        let mut tera = Tera::new();
+        tera.load_from_glob(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/*.tera"))
+            .unwrap();
+        for template in ["42.html.tera", "url.html.tera", "url2.html.tera"] {
+            let html = tera.render(template, &ctx).unwrap();
+            assert!(
+                html.contains(&format!("<a href=\"{escaped}\">{escaped}</a>")),
+                "{template}"
+            );
+            assert!(!html.contains("<img"), "{template}");
+        }
+        assert_eq!(rows[0].url, url);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires URLHARVEST_TEST_DATABASE_URL pointing at a disposable PostgreSQL database"]
+    async fn generator_queries_choose_the_latest_metadata_after_refresh() {
+        let mut conn = db_test_support::metadata_fixture().await;
+        for (refreshed, expected_title) in [(false, "Current title"), (true, "Refreshed title")] {
+            if refreshed {
+                sqlx::query("delete from url_meta where url_id = 1")
+                    .execute(&mut conn)
+                    .await
+                    .unwrap();
+                sqlx::query("insert into url_meta (url_id, title) values (1, 'Refreshed title')")
+                    .execute(&mut conn)
+                    .await
+                    .unwrap();
+            }
+            for (sql, channel, expected_count) in [(SQL_URL, Some("#test"), 2), (SQL_UNIQ, None, 3)] {
+                let rows = sqlx::query_as::<_, DbRead>(sql)
+                    .bind(0_i64)
+                    .fetch_all(&mut conn)
+                    .await
+                    .unwrap();
+                let row = rows
+                    .iter()
+                    .find(|row| row.url == "https://example.com/" && channel.is_none_or(|c| row.channel == c))
+                    .unwrap();
+                assert_eq!(row.id, 1);
+                assert_eq!(row.title, expected_title);
+                assert_eq!(row.seen_cnt, expected_count);
+                assert_eq!(row.seen_last, 30);
+                if channel.is_some() {
+                    let other = rows.iter().find(|row| row.channel == "#other").unwrap();
+                    assert_eq!(other.title, "Other channel title");
+                }
+            }
+        }
+    }
 
     #[tokio::test]
     async fn renders_checked_in_templates() {

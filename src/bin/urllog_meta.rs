@@ -1,7 +1,5 @@
 // bin/urllog_meta.rs
 
-use clap::Parser;
-use futures::TryStreamExt;
 use sqlx::postgres::PgListener;
 
 use urlharvest::*;
@@ -53,15 +51,16 @@ async fn main() -> anyhow::Result<()> {
     debug!("Config:\n{:#?}", &cfg);
 
     let dbc = start_db(&cfg).await?;
+    let fetcher = HttpFetcher::new()?;
 
     if opts.meta_backlog {
-        process_meta(&dbc, ProcessMode::Backlog).await
+        process_meta(&dbc, &fetcher, ProcessMode::Backlog).await
     } else {
-        process_meta(&dbc, ProcessMode::Live).await
+        process_meta(&dbc, &fetcher, ProcessMode::Live).await
     }
 }
 
-async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
+async fn process_meta(dbc: &DbCtx, fetcher: &HttpFetcher, mode: ProcessMode) -> anyhow::Result<()> {
     let sql_nometa = match mode {
         ProcessMode::Backlog => SQL_NOMETA_ASC,
         ProcessMode::Live => SQL_NOMETA_DESC,
@@ -97,7 +96,7 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
                 info!("*** PROCESSING *** at {}", &seen_i.ts_short_y());
             }
             for id in &ids {
-                update_meta(dbc, id.0, &id.1).await?;
+                update_meta(dbc, fetcher, id.0, &id.1).await?;
             }
         }
 
@@ -120,18 +119,21 @@ async fn process_meta(dbc: &DbCtx, mode: ProcessMode) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn update_meta(dbc: &DbCtx, url_id: i32, url_s: &str) -> anyhow::Result<()> {
-    let (mut title, lang, descr) = match get_text_body(url_s).await {
-        Err(e) => (format!("(URL fetch error: {e:?})"), STR_ERR.into(), STR_ERR.into()),
+pub async fn update_meta(dbc: &DbCtx, fetcher: &HttpFetcher, url_id: i32, url_s: &str) -> anyhow::Result<()> {
+    let (mut title, lang, descr) = match fetcher.get_text(url_s).await {
+        Err(e) => {
+            warn!("Metadata fetch failed for URL #{url_id}: {e:#}");
+            (format!("(URL fetch error: {e:#})"), STR_ERR.into(), STR_ERR.into())
+        }
         Ok(None) => (STR_NA.into(), STR_NA.into(), STR_NA.into()),
-        Ok(Some((body, _ct))) => match webpage::HTML::from_string(body, None) {
-            Err(e) => (format!("(Webpage HTML error: {e:?})"), STR_ERR.into(), STR_ERR.into()),
-            Ok(html) => (
-                html.title.unwrap_or_else(|| STR_NA.to_owned()),
-                html.language.unwrap_or_else(|| STR_NA.to_owned()),
-                html.description.unwrap_or_else(|| STR_NA.to_owned()),
-            ),
-        },
+        Ok(Some(text)) => {
+            let metadata = extract_metadata(&text.body);
+            (
+                metadata.title.unwrap_or_else(|| STR_NA.to_owned()),
+                metadata.lang.unwrap_or_else(|| STR_NA.to_owned()),
+                metadata.descr.unwrap_or_else(|| STR_NA.to_owned()),
+            )
+        }
     };
 
     // Cleanup the title

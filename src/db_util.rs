@@ -1,11 +1,13 @@
 // db_util.rs
 
-use sqlx::{Pool, Postgres};
+use sqlx::{
+    Executor, Pool, Postgres,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 
 use crate::*;
 
-const RETRY_CNT: usize = 5;
-const RETRY_SLEEP: u64 = 1;
+const DB_JOB_TIMEOUT: Duration = Duration::from_secs(8);
 pub const DB_CHANGE_CHANNEL: &str = "url_db_changed";
 
 #[derive(Debug, sqlx::FromRow)]
@@ -48,7 +50,15 @@ pub struct MetaCtx {
 }
 
 pub async fn start_db(c: &ConfigCommon) -> Result<DbCtx, sqlx::Error> {
-    let dbc = sqlx::PgPool::connect(&c.db_url).await?;
+    let options = c
+        .db_url
+        .parse::<PgConnectOptions>()?
+        .options([("statement_timeout", "5000"), ("lock_timeout", "1000")]);
+    let dbc = PgPoolOptions::new()
+        .max_connections(4)
+        .acquire_timeout(Duration::from_secs(3))
+        .connect_with(options)
+        .await?;
     sqlx::migrate!().run(&dbc).await?; // will create tables if necessary
     let db = DbCtx { dbc };
     Ok(db)
@@ -56,40 +66,30 @@ pub async fn start_db(c: &ConfigCommon) -> Result<DbCtx, sqlx::Error> {
 
 const SQL_INSERT_URL: &str = "insert into url (seen, channel, nick, url) \
     values ($1, $2, $3, $4)";
-pub async fn db_add_url(db: &mut DbCtx, ur: &UrlCtx) -> Result<u64, sqlx::Error> {
-    let mut rowcnt = 0;
-    let mut retry = 0;
-    while retry < RETRY_CNT {
-        match sqlx::query(SQL_INSERT_URL)
+/// Execute once: retrying a write after an ambiguous connection failure can duplicate it.
+/// Accepting an executor lets history imports use their existing transaction.
+pub async fn db_add_url<'e, E>(executor: E, ur: &UrlCtx) -> anyhow::Result<u64>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let res = timeout(
+        DB_JOB_TIMEOUT,
+        sqlx::query(SQL_INSERT_URL)
             .bind(ur.ts)
             .bind(&ur.chan)
             .bind(&ur.nick)
             .bind(&ur.url)
-            .execute(&db.dbc)
-            .await
-        {
-            Ok(res) => {
-                info!("Insert result: {res:#?}");
-                retry = 0;
-                rowcnt = res.rows_affected();
-                break;
-            }
-            Err(e) => {
-                error!("Insert failed: {e:?}");
-            }
-        }
-        error!("Retrying in {}s...", RETRY_SLEEP);
-        sleep(Duration::new(RETRY_SLEEP, 0)).await;
-        retry += 1;
-    }
-    if retry > 0 {
-        error!("GAVE UP after {RETRY_CNT} retries.");
-    }
-    Ok(rowcnt)
+            .execute(executor),
+    )
+    .await
+    .context("URL insert timed out")?
+    .context("URL insert failed")?;
+    Ok(res.rows_affected())
 }
 
 const SQL_INSERT_META: &str = "insert into url_meta (url_id, lang, title, descr) \
-        values ($1, $2, $3, $4)";
+    select id, $2, $3, $4 from url where id = $1 for key share \
+    on conflict (url_id) do nothing";
 pub async fn db_add_meta(db: &DbCtx, m: &MetaCtx) -> Result<u64, sqlx::Error> {
     let res = sqlx::query(SQL_INSERT_META)
         .bind(m.url_id)
